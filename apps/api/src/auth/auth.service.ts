@@ -27,19 +27,13 @@ async registerUser(createUserDto: CreateUserDto) {
   const user = await this.userService.findByEmail(createUserDto.email);
   if (user) throw new ConflictException('User already exists!');
 
-  // 2. تشفير كلمة المرور قبل الحفظ (هذا هو الجزء المفقود!)
-  const hashedPassword = await hash(createUserDto.password);
-
-  // 3. إنشاء المستخدم مع كلمة المرور المشفرة
-  return this.userService.create({
-    ...createUserDto,
-    password: hashedPassword,
-  });
+  // 2. UserService.create already hashes password once before persisting.
+  return this.userService.create(createUserDto);
 }
   async validateLocalUser(email: string, password: string) {
     const user = await this.userService.findByEmail(email);
     if (!user) throw new UnauthorizedException('User not found!');
-    const isPasswordMatched = verify(user.password, password);
+    const isPasswordMatched = await verify(user.password, password);
     if (!isPasswordMatched)
       throw new UnauthorizedException('Invalid Credentials!');
 

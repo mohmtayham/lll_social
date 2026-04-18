@@ -16,11 +16,13 @@ export class RefreshStrategy extends PassportStrategy(Strategy, 'refresh-jwt') {
     private readonly authService: AuthService,
   ) {
     // 3. جلب المفتاح السري من متغيرات البيئة
-    const secret = configService.get<string>('REFRESH_SECRET'); // تأكد من أن هذا هو اسم المتغير الصحيح
+    const secret =
+      configService.get<string>('REFRESH_JWT_SECRET') ??
+      configService.get<string>('REFRESH_SECRET');
 
     // 4. التحقق من وجود المفتاح السري ورمي خطأ إذا لم يكن موجوداً
     if (!secret) {
-      throw new Error('REFRESH_SECRET is not defined in the environment variables');
+      throw new Error('REFRESH_JWT_SECRET or REFRESH_SECRET is not defined in the environment variables');
     }
 
     // 5. استدعاء super() مع الإعدادات الصحيحة

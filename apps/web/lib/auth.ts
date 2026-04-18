@@ -42,13 +42,23 @@ export async function signOut() {
 }
 export async function signUp(state: FormState, formData: FormData): Promise<FormState> {
   console.log('--- [Frontend Action Started] ---');
-  let isSuccessful = false; // <--- أضف هذا السطر هنا
+  const rawName = formData.get("name");
+  const rawEmail = formData.get("email");
+  const rawPassword = formData.get("password");
+
+  if (
+    typeof rawName !== "string" ||
+    typeof rawEmail !== "string" ||
+    typeof rawPassword !== "string"
+  ) {
+    return { message: "Invalid form submission" };
+  }
   
   try {
     const validationFields = SignupFormSchema.safeParse({
-      name: formData.get("name"),
-      email: formData.get("email"),
-      password: formData.get("password"),
+      name: rawName,
+      email: rawEmail,
+      password: rawPassword,
     });
 
     if (!validationFields.success) {
@@ -67,9 +77,35 @@ export async function signUp(state: FormState, formData: FormData): Promise<Form
     console.log('Backend Status Code:', response.status);
     console.log('Backend Status Text:', response.statusText);
 
-  if (response.ok) {
+    if (response.ok) {
       console.log('🚀 Registration success!');
-      isSuccessful = true; // نضع علامة النجاح هنا
+
+      // Auto-login after successful signup so user lands on dashboard directly.
+      const loginResponse = await fetch(`${BACKEND_URL}/auth/signin`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: validationFields.data.email,
+          password: validationFields.data.password,
+        }),
+      });
+
+      if (!loginResponse.ok) {
+        return {
+          message: "Signup succeeded, but automatic login failed. Please sign in.",
+        };
+      }
+
+      const loginResult = await loginResponse.json();
+      await createSession({
+        user: {
+          id: loginResult.id,
+          name: loginResult.name,
+          role: loginResult.role,
+        },
+        accessToken: loginResult.accessToken,
+        refreshToken: loginResult.refreshToken,
+      });
     } else {
       const errorData = await response.json().catch(() => ({}));
       return {
@@ -82,10 +118,7 @@ export async function signUp(state: FormState, formData: FormData): Promise<Form
     return { message: "Something went wrong" };
   }
 
-  // نستدعي الـ redirect هنا خارج الـ try/catch
-  if (isSuccessful) {
-    redirect("/auth/signin");
-  }
+  redirect("/dashboard");
 }
 
 export async function signIn(
@@ -138,7 +171,7 @@ export async function signIn(
   }
 
   // التوجيه الناجح
-  redirect("/heroSection");
+  redirect("/dashboard");
 }
 
 export const refreshToken = async (

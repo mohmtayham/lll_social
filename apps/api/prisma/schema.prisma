@@ -7,68 +7,715 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum Role {
+  USER      @map("user")
+  ADMIN     @map("admin")
+  EDITOR    @map("editor")
+  MODERATOR @map("moderator")
+}
+
+enum Gender {
+  MALE              @map("male")
+  FEMALE            @map("female")
+  OTHER             @map("other")
+  PREFER_NOT_TO_SAY @map("prefer_not_to_say")
+}
+
+enum UserStatus {
+  ACTIVE   @map("active")
+  INACTIVE @map("inactive")
+  BANNED   @map("banned")
+}
+
+enum WhoCanMessage {
+  EVERYONE           @map("everyone")
+  FRIENDS            @map("friends")
+  FRIENDS_OF_FRIENDS @map("friends_of_friends")
+  NO_ONE             @map("no_one")
+}
+
+enum PostVisibility {
+  PUBLIC  @map("public")
+  FRIENDS @map("friends")
+  ONLY_ME @map("only_me")
+  CUSTOM  @map("custom")
+}
+
+enum WhoCanSeeStory {
+  PUBLIC        @map("public")
+  FRIENDS       @map("friends")
+  CLOSE_FRIENDS @map("close_friends")
+}
+
+enum WhoCanAddFriend {
+  EVERYONE           @map("everyone")
+  FRIENDS_OF_FRIENDS @map("friends_of_friends")
+}
+
+enum WhoCanTag {
+  EVERYONE @map("everyone")
+  FRIENDS  @map("friends")
+}
+
+enum ScheduledPostStatus {
+  PENDING   @map("pending")
+  PUBLISHED @map("published")
+  CANCELLED @map("cancelled")
+}
+
+enum ReactionType {
+  LIKE  @map("like")
+  LOVE  @map("love")
+  CARE  @map("care")
+  HAHA  @map("haha")
+  WOW   @map("wow")
+  SAD   @map("sad")
+  ANGRY @map("angry")
+}
+
+enum ReactableType {
+  POST    @map("Post")
+  COMMENT @map("Comment")
+}
+
+enum FriendshipStatus {
+  PENDING   @map("pending")
+  ACCEPTED  @map("accepted")
+  REJECTED  @map("rejected")
+  CANCELLED @map("cancelled")
+}
+
+enum ConversationType {
+  DIRECT @map("direct")
+  GROUP  @map("group")
+}
+
+enum ConversationParticipantRole {
+  MEMBER @map("member")
+  ADMIN  @map("admin")
+}
+
+enum MessageType {
+  TEXT     @map("text")
+  IMAGE    @map("image")
+  VIDEO    @map("video")
+  AUDIO    @map("audio")
+  FILE     @map("file")
+  STICKER  @map("sticker")
+  VOICE    @map("voice")
+  LOCATION @map("location")
+}
+
+enum SearchType {
+  USERS  @map("users")
+  POSTS  @map("posts")
+  GROUPS @map("groups")
+}
+
+enum UserInteractionType {
+  VIEW    @map("view")
+  CLICK   @map("click")
+  LIKE    @map("like")
+  COMMENT @map("comment")
+  SHARE   @map("share")
+  SAVE    @map("save")
+  HIDE    @map("hide")
+}
+
 model User {
-  id                 Int       @id @default(autoincrement())
-  email              String    @unique
-  name               String
-  password           String
-  hashedRefreshToken String?
-  role               Role      @default(USER)
-  profile            Profile?
-  bookings           Booking[]
-  comments           Comment[]
-  posts              Post[]
+  id                 BigInt     @id @default(autoincrement()) @db.UnsignedBigInt
+  username           String     @unique @default(cuid()) @db.VarChar(100)
+  name               String     @db.VarChar(255)
+  email              String     @unique @db.VarChar(255)
+  emailVerifiedAt    DateTime?  @map("email_verified_at") @db.Timestamp(0)
+  password           String     @db.VarChar(255)
+  phone              String?    @db.VarChar(20)
+  dateOfBirth        DateTime?  @map("date_of_birth") @db.Date
+  gender             Gender?
+  bio                String?    @db.Text
+  avatarMediaId      BigInt?    @map("avatar_media_id") @db.UnsignedBigInt
+  coverMediaId       BigInt?    @map("cover_media_id") @db.UnsignedBigInt
+  isVerified         Boolean    @default(false) @map("is_verified")
+  lastActiveAt       DateTime?  @map("last_active_at") @db.Timestamp(0)
+  status             UserStatus @default(ACTIVE)
+  fcmToken           String?    @map("fcm_token") @db.VarChar(255)
+  location           String     @default("") @db.VarChar(255)
+  country            String?    @db.VarChar(100)
+  city               String?    @db.VarChar(100)
+  lat                Float?
+  lng                Float?
+  role               Role       @default(USER)
+  hashedRefreshToken String?    @map("hashed_refresh_token") @db.Text
+  createdAt          DateTime   @default(now()) @map("created_at") @db.Timestamp(0)
+  updatedAt          DateTime   @updatedAt @map("updated_at") @db.Timestamp(0)
+  deletedAt          DateTime?  @map("deleted_at") @db.Timestamp(0)
+
+  avatarMedia              Media?                    @relation("UserAvatarMedia", fields: [avatarMediaId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  coverMedia               Media?                    @relation("UserCoverMedia", fields: [coverMediaId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  privacy                  UserPrivacy?
+  mediaUploads             Media[]                   @relation("MediaUploadedBy")
+  posts                    Post[]
+  allowedPosts             PostAllowedUser[]
+  scheduledPosts           ScheduledPost[]
+  comments                 Comment[]
+  reactions                Reaction[]
+  friendshipsInitiated     Friendship[]              @relation("FriendshipUser1")
+  friendshipsReceived      Friendship[]              @relation("FriendshipUser2")
+  blocksInitiated          Block[]                   @relation("Blocker")
+  blocksReceived           Block[]                   @relation("Blocked")
+  createdConversations     Conversation[]            @relation("ConversationCreatedBy")
+  conversationParticipants ConversationParticipant[]
+  messagesSent             Message[]                 @relation("MessageSender")
+  notifications            Notification[]            @relation("NotificationUser")
+  actorNotifications       Notification[]            @relation("NotificationActor")
+  savedPosts               SavedPost[]
+  searchHistory            SearchHistory[]
+  mentions                 Mention[]
+  userInteractions         UserInteraction[]
+  userInterests            UserInterest[]
+  relationshipScoresGiven  UserRelationshipScore[]   @relation("UserRelationshipScoreGiven")
+  relationshipScoresTarget UserRelationshipScore[]   @relation("UserRelationshipScoreTarget")
+  feedCache                UserFeedCache[]
+
+  @@map("users")
 }
 
-model Profile {
-  id     Int    @id @default(autoincrement())
-  bio    String
-  userId Int    @unique
-  user   User   @relation(fields: [userId], references: [id])
+model UserPrivacy {
+  userId          BigInt          @id @map("user_id") @db.UnsignedBigInt
+  whoCanMessage   WhoCanMessage   @default(FRIENDS) @map("who_can_message")
+  whoCanSeePosts  PostVisibility  @default(FRIENDS) @map("who_can_see_posts")
+  whoCanSeeStory  WhoCanSeeStory  @default(FRIENDS) @map("who_can_see_story")
+  whoCanAddFriend WhoCanAddFriend @default(EVERYONE) @map("who_can_add_friend")
+  whoCanTag       WhoCanTag       @default(FRIENDS) @map("who_can_tag")
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamp(0)
+  updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamp(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@map("user_privacy")
 }
 
-model Booking {
-  id     Int      @id @default(autoincrement())
-  date   DateTime
-  userId Int
-  user   User     @relation(fields: [userId], references: [id])
-}
+model Media {
+  id           BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  fileName     String   @map("file_name") @db.VarChar(255)
+  originalName String   @map("original_name") @db.VarChar(255)
+  mimeType     String   @map("mime_type") @db.VarChar(100)
+  size         BigInt   @db.UnsignedBigInt
+  hash         String?  @db.VarChar(64)
+  path         String   @db.VarChar(255)
+  uploadedBy   BigInt   @map("uploaded_by") @db.UnsignedBigInt
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
 
-model Category {
-  id    Int     @id @default(autoincrement())
-  slug  String  @unique
-  title String
-  img   String?
-  Posts Post[]
+  uploader            User                 @relation("MediaUploadedBy", fields: [uploadedBy], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  avatarForUsers      User[]               @relation("UserAvatarMedia")
+  coverForUsers       User[]               @relation("UserCoverMedia")
+  postMedia           PostMedia[]
+  scheduledPostMedia  ScheduledPostMedia[]
+  messageAttachments  MessageAttachment[]
+  conversationAvatars Conversation[]       @relation("ConversationAvatarMedia")
+
+  @@index([uploadedBy])
+  @@map("media")
 }
 
 model Post {
-  id        Int       @id @default(autoincrement())
-  createdAt DateTime  @default(now())
-  slug      String    @unique
-  title     String
-  desc      String
-  img       String?
-  views     Int       @default(0)
-  catSlug   String
-  cat       Category  @relation(fields: [catSlug], references: [slug])
-  userEmail String
-  user      User      @relation(fields: [userEmail], references: [email])
-  comments  Comment[]
+  id         BigInt         @id @default(autoincrement()) @db.UnsignedBigInt
+  userId     BigInt         @map("user_id") @db.UnsignedBigInt
+  content    String?        @db.Text
+  visibility PostVisibility @default(PUBLIC)
+  feeling    String?        @db.VarChar(50)
+  location   String?        @db.VarChar(255)
+  isEdited   Boolean        @default(false) @map("is_edited")
+  createdAt  DateTime       @default(now()) @map("created_at") @db.Timestamp(0)
+  updatedAt  DateTime       @updatedAt @map("updated_at") @db.Timestamp(0)
+  deletedAt  DateTime?      @map("deleted_at") @db.Timestamp(0)
+
+  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  media          PostMedia[]
+  allowedUsers   PostAllowedUser[]
+  edits          PostEdit[]
+  comments       Comment[]
+  savedBy        SavedPost[]
+  hashtags       PostHashtag[]
+  interactions   UserInteraction[]
+  trendingScores TrendingScore[]
+  categoryMap    PostCategoryMap[]
+  feedCache      UserFeedCache[]
+
+  @@index([userId])
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@map("posts")
+}
+
+model PostMedia {
+  postId  BigInt @map("post_id") @db.UnsignedBigInt
+  mediaId BigInt @map("media_id") @db.UnsignedBigInt
+
+  post  Post  @relation(fields: [postId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  media Media @relation(fields: [mediaId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@id([postId, mediaId])
+  @@map("post_media")
+}
+
+model PostAllowedUser {
+  postId BigInt @map("post_id") @db.UnsignedBigInt
+  userId BigInt @map("user_id") @db.UnsignedBigInt
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@id([postId, userId])
+  @@index([userId])
+  @@map("post_allowed_users")
+}
+
+model PostEdit {
+  id         BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  postId     BigInt   @map("post_id") @db.UnsignedBigInt
+  oldContent String   @map("old_content") @db.Text
+  editedAt   DateTime @default(now()) @map("edited_at") @db.Timestamp(0)
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([postId])
+  @@map("post_edits")
+}
+
+model ScheduledPost {
+  id           BigInt              @id @default(autoincrement()) @db.UnsignedBigInt
+  userId       BigInt              @map("user_id") @db.UnsignedBigInt
+  content      String?             @db.Text
+  visibility   PostVisibility      @default(PUBLIC)
+  feeling      String?             @db.VarChar(50)
+  location     String?             @db.VarChar(255)
+  scheduledFor DateTime            @map("scheduled_for") @db.Timestamp(0)
+  status       ScheduledPostStatus @default(PENDING)
+  createdAt    DateTime            @default(now()) @map("created_at") @db.Timestamp(0)
+  updatedAt    DateTime            @updatedAt @map("updated_at") @db.Timestamp(0)
+  deletedAt    DateTime?           @map("deleted_at") @db.Timestamp(0)
+
+  user  User                 @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  media ScheduledPostMedia[]
+
+  @@index([userId, scheduledFor])
+  @@map("scheduled_posts")
+}
+
+model ScheduledPostMedia {
+  scheduledPostId BigInt @map("scheduled_post_id") @db.UnsignedBigInt
+  mediaId         BigInt @map("media_id") @db.UnsignedBigInt
+
+  scheduledPost ScheduledPost @relation(fields: [scheduledPostId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  media         Media         @relation(fields: [mediaId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@id([scheduledPostId, mediaId])
+  @@map("scheduled_post_media")
 }
 
 model Comment {
-  id        Int       @id @default(autoincrement())
-  text      String
-  createdAt DateTime? @default(now()) @db.Timestamp(6)
-  user_id   Int
-  user      User      @relation(fields: [user_id], references: [id])
-  post_id   Int
-  post      Post      @relation(fields: [post_id], references: [id])
+  id        BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  postId    BigInt    @map("post_id") @db.UnsignedBigInt
+  userId    BigInt    @map("user_id") @db.UnsignedBigInt
+  parentId  BigInt?   @map("parent_id") @db.UnsignedBigInt
+  content   String    @db.Text
+  isEdited  Boolean   @default(false) @map("is_edited")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamp(0)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamp(0)
+
+  post    Post          @relation(fields: [postId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  user    User          @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  parent  Comment?      @relation("CommentReplies", fields: [parentId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  replies Comment[]     @relation("CommentReplies")
+  edits   CommentEdit[]
+
+  @@index([postId])
+  @@index([parentId])
+  @@map("comments")
 }
 
-enum Role {
-  ADMIN
-  EDITOR
-  USER
+model CommentEdit {
+  id         BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  commentId  BigInt   @map("comment_id") @db.UnsignedBigInt
+  oldContent String   @map("old_content") @db.Text
+  editedAt   DateTime @default(now()) @map("edited_at") @db.Timestamp(0)
+
+  comment Comment @relation(fields: [commentId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([commentId])
+  @@map("comment_edits")
+}
+
+model Reaction {
+  id            BigInt        @id @default(autoincrement()) @db.UnsignedBigInt
+  userId        BigInt        @map("user_id") @db.UnsignedBigInt
+  reactableId   BigInt        @map("reactable_id") @db.UnsignedBigInt
+  reactableType ReactableType @map("reactable_type")
+  reactionType  ReactionType  @default(LIKE) @map("reaction_type")
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamp(0)
+  deletedAt     DateTime?     @map("deleted_at") @db.Timestamp(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([userId, reactableId, reactableType])
+  @@index([userId])
+  @@index([reactableId, reactableType])
+  @@map("reactions")
+}
+
+model Friendship {
+  id        BigInt           @id @default(autoincrement()) @db.UnsignedBigInt
+  userId1   BigInt           @map("user_id_1") @db.UnsignedBigInt
+  userId2   BigInt           @map("user_id_2") @db.UnsignedBigInt
+  status    FriendshipStatus @default(PENDING)
+  createdAt DateTime         @default(now()) @map("created_at") @db.Timestamp(0)
+  updatedAt DateTime         @updatedAt @map("updated_at") @db.Timestamp(0)
+  deletedAt DateTime?        @map("deleted_at") @db.Timestamp(0)
+
+  user1 User @relation("FriendshipUser1", fields: [userId1], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  user2 User @relation("FriendshipUser2", fields: [userId2], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([userId1, userId2])
+  @@index([userId1])
+  @@index([userId2])
+  @@map("friendships")
+}
+
+model Block {
+  id        BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  blockerId BigInt    @map("blocker_id") @db.UnsignedBigInt
+  blockedId BigInt    @map("blocked_id") @db.UnsignedBigInt
+  reason    String?   @db.Text
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamp(0)
+
+  blocker User @relation("Blocker", fields: [blockerId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  blocked User @relation("Blocked", fields: [blockedId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([blockerId, blockedId])
+  @@index([blockedId])
+  @@map("blocks")
+}
+
+model Conversation {
+  id            BigInt           @id @default(autoincrement()) @db.UnsignedBigInt
+  type          ConversationType @default(DIRECT)
+  name          String?          @db.VarChar(100)
+  description   String?          @db.Text
+  avatarMediaId BigInt?          @map("avatar_media_id") @db.UnsignedBigInt
+  createdBy     BigInt           @map("created_by") @db.UnsignedBigInt
+  lastMessageId BigInt?          @map("last_message_id") @db.UnsignedBigInt
+  lastMessageAt DateTime?        @map("last_message_at") @db.Timestamp(0)
+  createdAt     DateTime         @default(now()) @map("created_at") @db.Timestamp(0)
+  updatedAt     DateTime         @updatedAt @map("updated_at") @db.Timestamp(0)
+
+  avatarMedia  Media?                    @relation("ConversationAvatarMedia", fields: [avatarMediaId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  creator      User                      @relation("ConversationCreatedBy", fields: [createdBy], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  participants ConversationParticipant[]
+  messages     Message[]
+
+  @@index([createdBy])
+  @@index([lastMessageAt])
+  @@map("conversations")
+}
+
+model ConversationParticipant {
+  id                BigInt                      @id @default(autoincrement()) @db.UnsignedBigInt
+  conversationId    BigInt                      @map("conversation_id") @db.UnsignedBigInt
+  userId            BigInt                      @map("user_id") @db.UnsignedBigInt
+  role              ConversationParticipantRole @default(MEMBER)
+  lastReadMessageId BigInt?                     @map("last_read_message_id") @db.UnsignedBigInt
+  isMuted           Boolean                     @default(false) @map("is_muted")
+  isArchived        Boolean                     @default(false) @map("is_archived")
+  leftAt            DateTime?                   @map("left_at") @db.Timestamp(0)
+  joinedAt          DateTime                    @default(now()) @map("joined_at") @db.Timestamp(0)
+  createdAt         DateTime                    @default(now()) @map("created_at") @db.Timestamp(0)
+  updatedAt         DateTime                    @updatedAt @map("updated_at") @db.Timestamp(0)
+
+  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  lastReadMessage Message?     @relation("ParticipantLastReadMessage", fields: [lastReadMessageId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+  @@index([lastReadMessageId])
+  @@map("conversation_participants")
+}
+
+model Message {
+  id                   BigInt      @id @default(autoincrement()) @db.UnsignedBigInt
+  conversationId       BigInt      @map("conversation_id") @db.UnsignedBigInt
+  senderId             BigInt      @map("sender_id") @db.UnsignedBigInt
+  content              String?     @db.Text
+  messageType          MessageType @default(TEXT) @map("message_type")
+  replyToId            BigInt?     @map("reply_to_id") @db.UnsignedBigInt
+  clientMessageId      String?     @map("client_message_id") @db.VarChar(100)
+  isEdited             Boolean     @default(false) @map("is_edited")
+  isDeletedForEveryone Boolean     @default(false) @map("is_deleted_for_everyone")
+  editedAt             DateTime?   @map("edited_at") @db.Timestamp(0)
+  createdAt            DateTime    @default(now()) @map("created_at") @db.Timestamp(0)
+  updatedAt            DateTime    @updatedAt @map("updated_at") @db.Timestamp(0)
+  deletedAt            DateTime?   @map("deleted_at") @db.Timestamp(0)
+
+  conversation          Conversation              @relation(fields: [conversationId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  sender                User                      @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  replyTo               Message?                  @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  replies               Message[]                 @relation("MessageReplies")
+  attachments           MessageAttachment[]
+  edits                 MessageEdit[]
+  participantLastReadBy ConversationParticipant[] @relation("ParticipantLastReadMessage")
+
+  @@unique([senderId, clientMessageId])
+  @@index([conversationId, createdAt])
+  @@index([conversationId, id])
+  @@index([replyToId])
+  @@map("messages")
+}
+
+model MessageAttachment {
+  messageId BigInt @map("message_id") @db.UnsignedBigInt
+  mediaId   BigInt @map("media_id") @db.UnsignedBigInt
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  media   Media   @relation(fields: [mediaId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@id([messageId, mediaId])
+  @@map("message_attachments")
+}
+
+model MessageEdit {
+  id         BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  messageId  BigInt   @map("message_id") @db.UnsignedBigInt
+  oldContent String   @map("old_content") @db.Text
+  editedAt   DateTime @default(now()) @map("edited_at") @db.Timestamp(0)
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([messageId])
+  @@map("message_edits")
+}
+
+model Notification {
+  id         BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  userId     BigInt    @map("user_id") @db.UnsignedBigInt
+  actorId    BigInt?   @map("actor_id") @db.UnsignedBigInt
+  type       String    @db.VarChar(100)
+  data       Json?
+  entityId   BigInt?   @map("entity_id") @db.UnsignedBigInt
+  entityType String?   @map("entity_type") @db.VarChar(50)
+  uniqueKey  String?   @unique @map("unique_key") @db.VarChar(255)
+  isRead     Boolean   @default(false) @map("is_read")
+  readAt     DateTime? @map("read_at") @db.Timestamp(0)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
+  deletedAt  DateTime? @map("deleted_at") @db.Timestamp(0)
+
+  user  User  @relation("NotificationUser", fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  actor User? @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+  @@map("notifications")
+}
+
+model SavedPost {
+  id        BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  userId    BigInt   @map("user_id") @db.UnsignedBigInt
+  postId    BigInt   @map("post_id") @db.UnsignedBigInt
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([userId, postId])
+  @@map("saved_posts")
+}
+
+model SearchHistory {
+  id         BigInt     @id @default(autoincrement()) @db.UnsignedBigInt
+  userId     BigInt     @map("user_id") @db.UnsignedBigInt
+  query      String     @db.VarChar(255)
+  searchType SearchType @default(POSTS) @map("search_type")
+  createdAt  DateTime   @default(now()) @map("created_at") @db.Timestamp(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([userId])
+  @@map("search_history")
+}
+
+model Mention {
+  id              BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  userId          BigInt   @map("user_id") @db.UnsignedBigInt
+  mentionedInType String   @map("mentioned_in_type") @db.VarChar(50)
+  mentionedInId   BigInt   @map("mentioned_in_id") @db.UnsignedBigInt
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([userId])
+  @@index([mentionedInType, mentionedInId])
+  @@map("mentions")
+}
+
+model Hashtag {
+  id        BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  name      String?  @db.VarChar(100)
+  nameLower String   @unique @map("name_lower") @db.VarChar(100)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+
+  posts PostHashtag[]
+
+  @@map("hashtags")
+}
+
+model PostHashtag {
+  postId    BigInt @map("post_id") @db.UnsignedBigInt
+  hashtagId BigInt @map("hashtag_id") @db.UnsignedBigInt
+
+  post    Post    @relation(fields: [postId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  hashtag Hashtag @relation(fields: [hashtagId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@id([postId, hashtagId])
+  @@map("post_hashtags")
+}
+
+model AppRole {
+  id        BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  name      String   @db.VarChar(255)
+  guardName String?  @map("guard_name") @db.VarChar(255)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
+
+  modelHasRoles ModelHasRole[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id        BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  name      String   @db.VarChar(255)
+  guardName String?  @map("guard_name") @db.VarChar(255)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
+
+  modelHasPermissions ModelHasPermission[]
+
+  @@map("permissions")
+}
+
+model ModelHasRole {
+  id        BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  roleId    BigInt @map("role_id") @db.UnsignedBigInt
+  modelType String @map("model_type") @db.VarChar(100)
+  modelId   BigInt @map("model_id") @db.UnsignedBigInt
+
+  role AppRole @relation(fields: [roleId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([modelType, modelId, roleId])
+  @@index([roleId])
+  @@map("model_has_roles")
+}
+
+model UserInteraction {
+  id              BigInt              @id @default(autoincrement()) @db.UnsignedBigInt
+  userId          BigInt              @map("user_id") @db.UnsignedBigInt
+  postId          BigInt              @map("post_id") @db.UnsignedBigInt
+  interactionType UserInteractionType @map("interaction_type")
+  watchTime       Int?                @map("watch_time")
+  createdAt       DateTime            @default(now()) @map("created_at") @db.Timestamp(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([userId, postId])
+  @@index([userId, interactionType])
+  @@map("user_interactions")
+}
+
+model TrendingScore {
+  id           BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  postId       BigInt   @map("post_id") @db.UnsignedBigInt
+  score        Float
+  region       String   @db.VarChar(100)
+  calculatedAt DateTime @map("calculated_at") @db.Timestamp(0)
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([region, score])
+  @@map("trending_scores")
+}
+
+model UserRelationshipScore {
+  userId       BigInt @map("user_id") @db.UnsignedBigInt
+  targetUserId BigInt @map("target_user_id") @db.UnsignedBigInt
+  score        Float
+
+  user       User @relation("UserRelationshipScoreGiven", fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  targetUser User @relation("UserRelationshipScoreTarget", fields: [targetUserId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@id([userId, targetUserId])
+  @@map("user_relationship_scores")
+}
+
+model UserInterest {
+  id       BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  userId   BigInt @map("user_id") @db.UnsignedBigInt
+  interest String @db.VarChar(100)
+  score    Float
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([userId, interest])
+  @@map("user_interests")
+}
+
+model PostCategory {
+  id   BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  name String @db.VarChar(100)
+
+  postMap PostCategoryMap[]
+
+  @@map("post_categories")
+}
+
+model PostCategoryMap {
+  postId     BigInt @map("post_id") @db.UnsignedBigInt
+  categoryId BigInt @map("category_id") @db.UnsignedBigInt
+
+  post     Post         @relation(fields: [postId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  category PostCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@id([postId, categoryId])
+  @@map("post_category_map")
+}
+
+model UserFeedCache {
+  userId    BigInt   @map("user_id") @db.UnsignedBigInt
+  postId    BigInt   @map("post_id") @db.UnsignedBigInt
+  score     Float
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@id([userId, postId])
+  @@index([userId, score])
+  @@index([userId, createdAt])
+  @@map("user_feed_cache")
+}
+
+model ModelHasPermission {
+  id           BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  permissionId BigInt @map("permission_id") @db.UnsignedBigInt
+  modelType    String @map("model_type") @db.VarChar(100)
+  modelId      BigInt @map("model_id") @db.UnsignedBigInt
+
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([modelType, modelId, permissionId])
+  @@index([permissionId])
+  @@map("model_has_permissions")
 }

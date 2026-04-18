@@ -1,11 +1,9 @@
     'use client';
     import React from 'react';
-    // استبدل السطر القديم بهذا:
 import { useRouter } from 'next/navigation';
-    import { motion, useScroll, useTransform } from 'framer-motion';
-    import { redirect } from 'next/dist/server/api-utils';
+    import { motion, useScroll, useTransform, type Variants } from 'framer-motion';
 
-    const containerVariants = {
+    const containerVariants: Variants = {
     hidden: {},
     show: {
         transition: {
@@ -15,14 +13,14 @@ import { useRouter } from 'next/navigation';
     },
     };
 
-    const wordVariants = {
+    const wordVariants: Variants = {
     hidden: { opacity: 0, y: 30 },
     show: {
         opacity: 1,
         y: 0,
         transition: {
         duration: 0.6,
-        ease: [0.22, 1, 0.36, 1],
+        ease: [0.22, 1, 0.36, 1] as [number, number, number, number],
         },
     },
     };

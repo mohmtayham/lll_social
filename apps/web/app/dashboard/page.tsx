@@ -1,5 +1,4 @@
 import { getSession } from "@/lib/session";
-import { Role } from "@/lib/type";
 import { redirect } from "next/navigation";
 import LogoutButton from "@/components/LogOutButton";
 import React from "react";
@@ -18,22 +17,12 @@ const Dashboard = async () => {
       redirect("/auth/signin");
     }
 
-    // الشرط الثاني: فحص الصلاحيات
-    console.log("🛂 Checking Role Authorization...");
-    console.log("Current User Role:", session.user.role);
-    console.log("Required Role (ADMIN):", Role.ADMIN);
-
-    if (session.user.role !== Role.ADMIN) {
-      console.warn(`🚫 Redirecting: User role '${session.user.role}' is not '${Role.ADMIN}'`);
-      redirect("/auth/signin");
-    }
-
-    console.log("🎉 Access Granted to Admin Dashboard");
+    console.log("🎉 Access Granted to Dashboard");
 
    // في الـ Dashboard
 return (
   <div>
-    <h1>Welcome Admin: {session.user.name}</h1>
+    <h1>Welcome: {session.user.name}</h1>
     <LogoutButton /> {/* أضف الزر هنا */}
   </div>
 );
