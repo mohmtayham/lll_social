@@ -896,62 +896,6 @@ async function seed() {
     },
   });
 
-  const adminRole = await findFirstOrCreate(
-    prisma.appRole,
-    { name: 'admin' },
-    { name: 'admin', guardName: 'api' },
-  );
-
-  const userRole = await findFirstOrCreate(
-    prisma.appRole,
-    { name: 'user' },
-    { name: 'user', guardName: 'api' },
-  );
-
-  const manageUsersPermission = await findFirstOrCreate(
-    prisma.permission,
-    { name: 'manage-users' },
-    { name: 'manage-users', guardName: 'api' },
-  );
-
-  const createPostPermission = await findFirstOrCreate(
-    prisma.permission,
-    { name: 'create-post' },
-    { name: 'create-post', guardName: 'api' },
-  );
-
-  await prisma.modelHasRole.upsert({
-    where: {
-      modelType_modelId_roleId: {
-        modelType: 'User',
-        modelId: alice.id,
-        roleId: adminRole.id,
-      },
-    },
-    update: {},
-    create: {
-      modelType: 'User',
-      modelId: alice.id,
-      roleId: adminRole.id,
-    },
-  });
-
-  await prisma.modelHasRole.upsert({
-    where: {
-      modelType_modelId_roleId: {
-        modelType: 'User',
-        modelId: bob.id,
-        roleId: userRole.id,
-      },
-    },
-    update: {},
-    create: {
-      modelType: 'User',
-      modelId: bob.id,
-      roleId: userRole.id,
-    },
-  });
-
   const interactionSeeds = [
     {
       userId: alice.id,
@@ -1106,38 +1050,6 @@ async function seed() {
       userId: bob.id,
       postId: postAlice.id,
       score: 0.99,
-    },
-  });
-
-  await prisma.modelHasPermission.upsert({
-    where: {
-      modelType_modelId_permissionId: {
-        modelType: 'User',
-        modelId: alice.id,
-        permissionId: manageUsersPermission.id,
-      },
-    },
-    update: {},
-    create: {
-      modelType: 'User',
-      modelId: alice.id,
-      permissionId: manageUsersPermission.id,
-    },
-  });
-
-  await prisma.modelHasPermission.upsert({
-    where: {
-      modelType_modelId_permissionId: {
-        modelType: 'User',
-        modelId: bob.id,
-        permissionId: createPostPermission.id,
-      },
-    },
-    update: {},
-    create: {
-      modelType: 'User',
-      modelId: bob.id,
-      permissionId: createPostPermission.id,
     },
   });
 

@@ -10,38 +10,58 @@ import {
   SignupFormSchema,
 } from "./type";
 import { createSession, updateTokens } from "./session";
-import { cookies } from "next/dist/server/request/cookies";
-export async function signOut() {
-  console.log("--- [Frontend: SignOut Triggered] ---");
+import { cookies } from "next/headers";
 
+const readApiErrorMessage = async (
+  response: Response,
+  fallback: string
+) => {
+  try {
+    const payload = await response.json();
+
+    if (typeof payload?.message === "string") {
+      return payload.message;
+    }
+
+    if (Array.isArray(payload?.message)) {
+      return payload.message.join(", ");
+    }
+
+    return fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+export async function signOut() {
   try {
     const cookieStore = await cookies();
-    
-    // الحل هنا: تخزين نتيجة الدالة في متغير باسم session
-    const session = await getSession(); 
+    const session = await getSession();
 
-    // الآن يمكنك استخدام session.accessToken بأمان
     if (session && session.accessToken) {
-      const response = await fetch(`${BACKEND_URL}/auth/signout`, {
+      await fetch(`${BACKEND_URL}/auth/signout`, {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${session.accessToken}`, 
-          "Content-Type": "application/json"
-        }
+          Authorization: `Bearer ${session.accessToken}`,
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
       });
-      console.log("📡 Backend Revoke Response Status:", response.status);
     }
 
     cookieStore.delete("session");
-    console.log("✅ Local cookie deleted");
   } catch (error) {
-    console.error("🔥 SignOut Error:", error);
+    const cookieStore = await cookies();
+    cookieStore.delete("session");
+    console.error("SignOut action failed:", error);
   }
 
   redirect("/auth/signin");
 }
-export async function signUp(state: FormState, formData: FormData): Promise<FormState> {
-  console.log('--- [Frontend Action Started] ---');
+export async function signUp(
+  state: FormState,
+  formData: FormData
+): Promise<FormState> {
   const rawName = formData.get("name");
   const rawEmail = formData.get("email");
   const rawPassword = formData.get("password");
@@ -53,7 +73,7 @@ export async function signUp(state: FormState, formData: FormData): Promise<Form
   ) {
     return { message: "Invalid form submission" };
   }
-  
+
   try {
     const validationFields = SignupFormSchema.safeParse({
       name: rawName,
@@ -62,60 +82,56 @@ export async function signUp(state: FormState, formData: FormData): Promise<Form
     });
 
     if (!validationFields.success) {
-      console.warn('⚠️ Validation Failed:', validationFields.error.flatten().fieldErrors);
       return { error: validationFields.error.flatten().fieldErrors };
     }
 
-    console.log('Calling Backend:', `${BACKEND_URL}/auth/signup`);
-    
     const response = await fetch(`${BACKEND_URL}/auth/signup`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(validationFields.data),
+      cache: "no-store",
     });
 
-    console.log('Backend Status Code:', response.status);
-    console.log('Backend Status Text:', response.statusText);
+    if (!response.ok) {
+      const message =
+        response.status === 409
+          ? "User already exists"
+          : await readApiErrorMessage(response, "Failed to create account");
 
-    if (response.ok) {
-      console.log('🚀 Registration success!');
+      return { message };
+    }
 
-      // Auto-login after successful signup so user lands on dashboard directly.
-      const loginResponse = await fetch(`${BACKEND_URL}/auth/signin`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: validationFields.data.email,
-          password: validationFields.data.password,
-        }),
-      });
+    // Auto-login right after signup.
+    const loginResponse = await fetch(`${BACKEND_URL}/auth/signin`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: validationFields.data.email,
+        password: validationFields.data.password,
+      }),
+      cache: "no-store",
+    });
 
-      if (!loginResponse.ok) {
-        return {
-          message: "Signup succeeded, but automatic login failed. Please sign in.",
-        };
-      }
-
-      const loginResult = await loginResponse.json();
-      await createSession({
-        user: {
-          id: loginResult.id,
-          name: loginResult.name,
-          role: loginResult.role,
-        },
-        accessToken: loginResult.accessToken,
-        refreshToken: loginResult.refreshToken,
-      });
-    } else {
-      const errorData = await response.json().catch(() => ({}));
+    if (!loginResponse.ok) {
       return {
-        message: response.status === 409 ? "User exists!" : errorData.message,
+        message:
+          "Account created successfully, but automatic login failed. Please sign in.",
       };
     }
+
+    const loginResult = await loginResponse.json();
+    await createSession({
+      user: {
+        id: loginResult.id,
+        name: loginResult.name,
+        role: loginResult.role,
+      },
+      accessToken: loginResult.accessToken,
+      refreshToken: loginResult.refreshToken,
+    });
   } catch (error) {
-    // نتأكد أننا لا نلتقط خطأ الـ redirect هنا
-    console.error('🔥 Error:', error);
-    return { message: "Something went wrong" };
+    console.error("SignUp action failed:", error);
+    return { message: "Server unreachable or connection error." };
   }
 
   redirect("/dashboard");
@@ -132,7 +148,7 @@ export async function signIn(
 
   if (!validatedFields.success) {
     return {
-      message: "Validation Error", // تأكد أن FormState لديك يحتوي على حقل message
+      message: "Validation Error",
       error: validatedFields.error.flatten().fieldErrors,
     };
   }
@@ -142,18 +158,20 @@ export async function signIn(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(validatedFields.data),
+      cache: "no-store",
     });
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      return {
-        message: response.status === 401 ? "Invalid Credentials!" : (errorData.message || "Login failed"),
-      };
+      const message =
+        response.status === 401
+          ? "Invalid credentials"
+          : await readApiErrorMessage(response, "Login failed");
+
+      return { message };
     }
 
     const result = await response.json();
-    
-    // تأكد أن createSession لا ترفع خطأً غير متوقع
+
     await createSession({
       user: {
         id: result.id,
@@ -163,59 +181,41 @@ export async function signIn(
       accessToken: result.accessToken,
       refreshToken: result.refreshToken,
     });
-
-    // الـ redirect يجب أن تكون خارج الـ try/catch لتجنب التقاطها
   } catch (error) {
-    console.error('🔥 SignIn Action Error:', error);
+    console.error("SignIn action failed:", error);
     return { message: "Server unreachable or connection error." };
   }
 
-  // التوجيه الناجح
   redirect("/dashboard");
 }
 
-export const refreshToken = async (
-  oldRefreshToken: string
-) => {
+export const refreshToken = async (oldRefreshToken: string) => {
   try {
-    const response = await fetch(
-      `${BACKEND_URL}/auth/refresh`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          refresh: oldRefreshToken,
-        }),
-      }
-    );
+    const response = await fetch(`${BACKEND_URL}/auth/refresh`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        refresh: oldRefreshToken,
+      }),
+      cache: "no-store",
+    });
 
     if (!response.ok) {
-      throw new Error(
-        "Failed to refresh token" + response.statusText
-      );
+      return null;
     }
 
-    const { accessToken, refreshToken } =
-      await response.json();
-    // update session with new tokens
-    const updateRes = await fetch(
-      "http://localhost:3000/api/auth/update",
-      {
-        method: "POST",
-        body: JSON.stringify({
-          accessToken,
-          refreshToken,
-        }),
-      }
-    );
-    if (!updateRes.ok)
-      throw new Error("Failed to update the tokens");
+    const { accessToken, refreshToken } = await response.json();
+
+    await updateTokens({
+      accessToken,
+      refreshToken,
+    });
 
     return accessToken;
-  } catch (err) {
-    console.error("Refresh Token failed:", err);
+  } catch (error) {
+    console.error("Refresh token failed:", error);
     return null;
   }
 };

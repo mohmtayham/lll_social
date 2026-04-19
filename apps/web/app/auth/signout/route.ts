@@ -6,12 +6,13 @@ import { redirect, RedirectType } from "next/navigation";
 import { NextRequest } from "next/server";
 
 export async function GET(req: NextRequest) {
-  const respone = await authFetch(`${BACKEND_URL}/auth/signout`, {
-    method: "POST",
-  });
-  if (respone.ok) {
+  try {
+    await authFetch(`${BACKEND_URL}/auth/signout`, {
+      method: "POST",
+    });
+  } finally {
+    await deleteSession();
   }
-  await deleteSession();
 
   redirect("/", RedirectType.push);
 }

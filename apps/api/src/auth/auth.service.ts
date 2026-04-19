@@ -22,14 +22,27 @@ export class AuthService {
     @Inject(refreshConfig.KEY)
     private refreshTokenConfig: ConfigType<typeof refreshConfig>,
   ) {}
-async registerUser(createUserDto: CreateUserDto) {
-  // 1. التحقق من وجود المستخدم
-  const user = await this.userService.findByEmail(createUserDto.email);
-  if (user) throw new ConflictException('User already exists!');
+  async registerUser(createUserDto: CreateUserDto) {
+    const normalizedEmail = createUserDto.email.trim().toLowerCase();
+    const user = await this.userService.findByEmail(normalizedEmail);
 
-  // 2. UserService.create already hashes password once before persisting.
-  return this.userService.create(createUserDto);
-}
+    if (user) {
+      throw new ConflictException('User already exists!');
+    }
+
+    const createdUser = await this.userService.create({
+      ...createUserDto,
+      email: normalizedEmail,
+    });
+
+    // Never return raw Prisma user here because it contains BigInt fields and hashed password.
+    return {
+      id: createdUser.id.toString(),
+      name: createdUser.name,
+      email: createdUser.email,
+      role: createdUser.role,
+    };
+  }
   async validateLocalUser(email: string, password: string) {
     const user = await this.userService.findByEmail(email);
     if (!user) throw new UnauthorizedException('User not found!');
@@ -37,15 +50,15 @@ async registerUser(createUserDto: CreateUserDto) {
     if (!isPasswordMatched)
       throw new UnauthorizedException('Invalid Credentials!');
 
-    return { id: user.id, name: user.name, role: user.role };
+    return { id: user.id.toString(), name: user.name, role: user.role };
   }
 
-  async login(userId: number, name: string, role: Role) {
+  async login(userId: string | number | bigint, name: string, role: Role) {
     const { accessToken, refreshToken } = await this.generateTokens(userId);
     const hashedRT = await hash(refreshToken);
     await this.userService.updateHashedRefreshToken(userId, hashedRT);
     return {
-      id: userId,
+      id: userId.toString(),
       name: name,
       role,
       accessToken,
@@ -53,8 +66,8 @@ async registerUser(createUserDto: CreateUserDto) {
     };
   }
 
-  async generateTokens(userId: number) {
-    const payload: AuthJwtPayload = { sub: userId };
+  async generateTokens(userId: string | number | bigint) {
+    const payload: AuthJwtPayload = { sub: userId.toString() };
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(payload),
       this.jwtService.signAsync(payload, this.refreshTokenConfig),
@@ -66,34 +79,36 @@ async registerUser(createUserDto: CreateUserDto) {
     };
   }
 
-  async validateJwtUser(userId: number) {
+  async validateJwtUser(userId: string) {
     const user = await this.userService.findOne(userId);
     if (!user) throw new UnauthorizedException('User not found!');
-    const currentUser = { id: user.id, role: user.role };
+    const currentUser = { id: user.id.toString(), name: user.name, role: user.role };
     return currentUser;
   }
 
-  async validateRefreshToken(userId: number, refreshToken: string) {
+  async validateRefreshToken(userId: string, refreshToken: string) {
     const user = await this.userService.findOne(userId);
     if (!user) throw new UnauthorizedException('User not found!');
+    if (!user.hashedRefreshToken)
+      throw new UnauthorizedException('Refresh token revoked');
 
     const refreshTokenMatched = await verify(
-      user.hashedRefreshToken as any ,
+      user.hashedRefreshToken,
       refreshToken,
     );
 
     if (!refreshTokenMatched)
       throw new UnauthorizedException('Invalid Refresh Token!');
-    const currentUser = { id: user.id };
+    const currentUser = { id: user.id.toString(), name: user.name };
     return currentUser;
   }
 
-  async refreshToken(userId: number, name: string) {
+  async refreshToken(userId: string, name: string) {
     const { accessToken, refreshToken } = await this.generateTokens(userId);
     const hashedRT = await hash(refreshToken);
     await this.userService.updateHashedRefreshToken(userId, hashedRT);
     return {
-      id: userId,
+      id: userId.toString(),
       name: name,
       accessToken,
       refreshToken,
@@ -106,12 +121,13 @@ async registerUser(createUserDto: CreateUserDto) {
     return await this.userService.create(googleUser);
   }
 
-  async signOut(userId: number) {
-    return await this.userService.updateHashedRefreshToken(userId, null);
+  async signOut(userId: string) {
+    await this.userService.updateHashedRefreshToken(userId, null);
+    return { success: true };
   }
-  // أضف هذه الدالة داخل كلاس AuthService
-async revokeToken(userId: number) {
-  // نقوم بتصفير الـ hashedRefreshToken في قاعدة البيانات
-  return await this.userService.updateHashedRefreshToken(userId, null);
-}
+
+  async revokeToken(userId: string) {
+    await this.userService.updateHashedRefreshToken(userId, null);
+    return { success: true };
+  }
 }

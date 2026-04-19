@@ -2,7 +2,6 @@
 
 import { jwtVerify, SignJWT } from "jose";
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
 import { Role } from "./type";
 
 export type Session = {
@@ -20,6 +19,7 @@ const encodedKey = new TextEncoder().encode(secretKey);
 
 export async function createSession(payload: Session) {
   const expiredAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  const isProduction = process.env.NODE_ENV === "production";
 
   const session = await new SignJWT(payload)
     .setProtectedHeader({ alg: "HS256" })
@@ -31,7 +31,7 @@ export async function createSession(payload: Session) {
   const cookieStore = await cookies();
   cookieStore.set("session", session, {
     httpOnly: true,
-    secure: true,
+    secure: isProduction,
     expires: expiredAt,
     sameSite: "lax",
     path: "/",
@@ -53,8 +53,7 @@ export async function getSession() {
     return payload as Session;
   } catch (err) {
     console.error("Failed to verify the session", err);
-    // تم تصحيح الخطأ الإملائي هنا من sigin إلى signin
-    redirect("/auth/signin"); 
+    return null;
   }
 }
 

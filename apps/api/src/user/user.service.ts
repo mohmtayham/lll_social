@@ -7,6 +7,12 @@ import { hash } from 'argon2';
 export class UserService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private toBigInt(userId: string | number | bigint): bigint {
+    if (typeof userId === 'bigint') return userId;
+    if (typeof userId === 'number') return BigInt(userId);
+    return BigInt(userId);
+  }
+
   async create(createUserDto: CreateUserDto) {
     const { password, ...user } = createUserDto;
     const hashedPassword = await hash(password);
@@ -26,18 +32,18 @@ export class UserService {
     });
   }
 
-  async findOne(userId: number) {
+  async findOne(userId: string | number | bigint) {
     return await this.prisma.user.findUnique({
       where: {
-        id: userId,
+        id: this.toBigInt(userId),
       },
     });
   }
 
-  async updateHashedRefreshToken(userId: number, hashedRT: string | null) {
+  async updateHashedRefreshToken(userId: string | number | bigint, hashedRT: string | null) {
     return await this.prisma.user.update({
       where: {
-        id: userId,
+        id: this.toBigInt(userId),
       },
       data: {
         hashedRefreshToken: hashedRT,

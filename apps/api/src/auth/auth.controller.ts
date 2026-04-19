@@ -19,6 +19,7 @@ import { Response } from 'express';
 import { Public } from './decorators/public.decorator';
 import { Roles } from './decorators/roles.decorator';
 import { RolesGuard } from './guards/roles/roles.guard';
+import { Role } from '@prisma/client';
 
 @Controller('auth')
 export class AuthController {
@@ -45,7 +46,7 @@ async registerUser(@Body() createUserDto: CreateUserDto) {
     return this.authService.login(req.user.id, req.user.name, req.user.role);
   }
 
-  @Roles('ADMIN', 'EDITOR')
+  @Roles(Role.ADMIN, Role.EDITOR)
   @Get('protected')
   getAll(@Request() req) {
     return {

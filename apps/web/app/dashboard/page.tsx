@@ -2,38 +2,29 @@ import { getSession } from "@/lib/session";
 import { redirect } from "next/navigation";
 import LogoutButton from "@/components/LogOutButton";
 import React from "react";
+import Link from "next/link";
 
 const Dashboard = async () => {
-  console.log("--- [Dashboard Page: Access Attempt] ---");
+  const session = await getSession();
 
-  try {
-    const session = await getSession();
-
-    console.log("📦 Session Data:", JSON.stringify(session, null, 2));
-
-    // الشرط الأول: وجود الجلسة
-    if (!session || !session.user) {
-      console.warn("🚫 Redirecting: Session is null or user object missing");
-      redirect("/auth/signin");
-    }
-
-    console.log("🎉 Access Granted to Dashboard");
-
-   // في الـ Dashboard
-return (
-  <div>
-    <h1>Welcome: {session.user.name}</h1>
-    <LogoutButton /> {/* أضف الزر هنا */}
-  </div>
-);
-
-  } catch (error: any) {
-    // Next.js redirect throws an error, we should not catch it or we must rethrow it
-    if (error.digest?.includes('NEXT_REDIRECT')) throw error;
-    
-    console.error("💥 Dashboard Component Error:", error);
-    return <div>Something went wrong while loading the dashboard.</div>;
+  if (!session?.user) {
+    redirect("/auth/signin");
   }
+
+  return (
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 p-6">
+      <h1 className="text-2xl font-bold">Welcome: {session.user.name}</h1>
+      <div className="flex items-center gap-3">
+        <Link
+          href="/dashboard/messages"
+          className="rounded-md bg-black px-4 py-2 text-sm font-medium text-white"
+        >
+          Open Messages
+        </Link>
+        <LogoutButton />
+      </div>
+    </div>
+  );
 };
 
 export default Dashboard;

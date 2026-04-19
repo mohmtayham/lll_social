@@ -22,6 +22,8 @@ const SignInForm = () => {
             name="email"
             placeholder="m@example.com"
             type="email"
+            autoComplete="email"
+            required
           />
         </div>
         {state?.error?.email && (
@@ -30,7 +32,13 @@ const SignInForm = () => {
 
         <div>
           <Label htmlFor="password">Password</Label>
-          <Input id="password" type="password" name="password" />
+          <Input
+            id="password"
+            type="password"
+            name="password"
+            autoComplete="current-password"
+            required
+          />
         </div>
         {state?.error?.password && (
           <p className="text-sm text-red-500">{state.error.password}</p>
