@@ -230,6 +230,9 @@ model Post {
   createdAt  DateTime       @default(now()) @map("created_at") @db.Timestamp(0)
   updatedAt  DateTime       @updatedAt @map("updated_at") @db.Timestamp(0)
   deletedAt  DateTime?      @map("deleted_at") @db.Timestamp(0)
+  sharedPostId BigInt?  @map("shared_post_id") @db.UnsignedBigInt
+  sharedPost   Post?    @relation("PostShares", fields: [sharedPostId], references: [id])
+  shares       Post[]   @relation("PostShares")
 
   user           User              @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
   media          PostMedia[]
@@ -284,36 +287,6 @@ model PostEdit {
   @@map("post_edits")
 }
 
-model ScheduledPost {
-  id           BigInt              @id @default(autoincrement()) @db.UnsignedBigInt
-  userId       BigInt              @map("user_id") @db.UnsignedBigInt
-  content      String?             @db.Text
-  visibility   PostVisibility      @default(PUBLIC)
-  feeling      String?             @db.VarChar(50)
-  location     String?             @db.VarChar(255)
-  scheduledFor DateTime            @map("scheduled_for") @db.Timestamp(0)
-  status       ScheduledPostStatus @default(PENDING)
-  createdAt    DateTime            @default(now()) @map("created_at") @db.Timestamp(0)
-  updatedAt    DateTime            @updatedAt @map("updated_at") @db.Timestamp(0)
-  deletedAt    DateTime?           @map("deleted_at") @db.Timestamp(0)
-
-  user  User                 @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  media ScheduledPostMedia[]
-
-  @@index([userId, scheduledFor])
-  @@map("scheduled_posts")
-}
-
-model ScheduledPostMedia {
-  scheduledPostId BigInt @map("scheduled_post_id") @db.UnsignedBigInt
-  mediaId         BigInt @map("media_id") @db.UnsignedBigInt
-
-  scheduledPost ScheduledPost @relation(fields: [scheduledPostId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  media         Media         @relation(fields: [mediaId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-
-  @@id([scheduledPostId, mediaId])
-  @@map("scheduled_post_media")
-}
 
 model Comment {
   id        BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
@@ -388,7 +361,7 @@ model Block {
   id        BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
   blockerId BigInt    @map("blocker_id") @db.UnsignedBigInt
   blockedId BigInt    @map("blocked_id") @db.UnsignedBigInt
-  reason    String?   @db.Text
+
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
   deletedAt DateTime? @map("deleted_at") @db.Timestamp(0)
 
@@ -541,7 +514,7 @@ model SearchHistory {
   createdAt  DateTime   @default(now()) @map("created_at") @db.Timestamp(0)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-
+  @@unique([userId, query, searchType])
   @@index([userId])
   @@map("search_history")
 }

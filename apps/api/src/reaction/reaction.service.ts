@@ -13,10 +13,53 @@ export class ReactionService {
     return BigInt(value);
   }
 
-  async create(createDto: CreateReactionDto) {
-    const userId = this.toBigInt(createDto.userId);
-    return this.toggleReaction(userId, createDto);
+  create(createReactionDto: CreateReactionDto) {
+    return this.toggleReaction(createReactionDto.userId, createReactionDto);
   }
+
+  findAll() {
+    return this.prisma.reaction.findMany();
+  }
+
+  findOne(id: string) {
+    return this.prisma.reaction.findUnique({
+      where: { id: this.toBigInt(id) },
+    });
+  }
+
+  async update(id: string, updateReactionDto: UpdateReactionDto) {
+    const data: {
+      userId?: bigint;
+      reactableId?: bigint;
+      reactableType?: UpdateReactionDto['reactableType'];
+      reactionType?: UpdateReactionDto['reactionType'];
+    } = {};
+
+    if (updateReactionDto.userId) {
+      data.userId = this.toBigInt(updateReactionDto.userId);
+    }
+    if (updateReactionDto.reactableId) {
+      data.reactableId = this.toBigInt(updateReactionDto.reactableId);
+    }
+    if (updateReactionDto.reactableType !== undefined) {
+      data.reactableType = updateReactionDto.reactableType;
+    }
+    if (updateReactionDto.reactionType !== undefined) {
+      data.reactionType = updateReactionDto.reactionType;
+    }
+
+    return this.prisma.reaction.update({
+      where: { id: this.toBigInt(id) },
+      data,
+    });
+  }
+
+  remove(id: string) {
+    return this.prisma.reaction.delete({
+      where: { id: this.toBigInt(id) },
+    });
+  }
+
 
   async toggleReaction(userId: string | number | bigint, createDto: CreateReactionDto) {
     const existingReaction = await this.prisma.reaction.findUnique({
@@ -49,31 +92,6 @@ export class ReactionService {
         reactableType: createDto.reactableType,
         reactionType: createDto.reactionType ?? 'LIKE',
       },
-    });
-  }
-
-  findAll() {
-    return this.prisma.reaction.findMany();
-  }
-
-  findOne(id: string) {
-    return this.prisma.reaction.findUnique({
-      where: { id: this.toBigInt(id) },
-    });
-  }
-
-  update(id: string, updateReactionDto: UpdateReactionDto) {
-    return this.prisma.reaction.update({
-      where: { id: this.toBigInt(id) },
-      data: {
-        reactionType: updateReactionDto.reactionType,
-      },
-    });
-  }
-
-  remove(id: string) {
-    return this.prisma.reaction.delete({
-      where: { id: this.toBigInt(id) },
     });
   }
 }

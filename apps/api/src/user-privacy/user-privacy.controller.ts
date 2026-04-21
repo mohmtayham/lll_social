@@ -12,10 +12,6 @@ export class UserPrivacyController {
     return this.userPrivacyService.create(createUserPrivacyDto);
   }
 
-  @Get()
-  findAll() {
-    return this.userPrivacyService.findAll();
-  }
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.userPrivacyService.findOne(id);
@@ -26,8 +22,4 @@ export class UserPrivacyController {
     return this.userPrivacyService.update(id, updateUserPrivacyDto);
   }
 
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.userPrivacyService.remove(id);
-  }
 }

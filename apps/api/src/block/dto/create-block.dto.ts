@@ -6,7 +6,5 @@ export class CreateBlockDto {
   @IsString()
   blockedId: string;
 
-  @IsOptional()
-  @IsString()
-  reason?: string;
+
 }

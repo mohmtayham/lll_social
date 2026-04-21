@@ -16,6 +16,7 @@
     "sourceMap": true,
     "outDir": "./dist",
     "baseUrl": "./",
+    "ignoreDeprecations": "6.0",
     "tsBuildInfoFile": "./dist/tsconfig.tsbuildinfo",
     "incremental": true,
     "skipLibCheck": true,

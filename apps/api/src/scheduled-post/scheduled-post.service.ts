@@ -7,6 +7,9 @@ import { UpdateScheduledPostDto } from './dto/update-scheduled-post.dto';
 export class ScheduledPostService {
   constructor(private readonly prisma: PrismaService) {}
 
+
+
+  
   create(createScheduledPostDto: CreateScheduledPostDto) {
     return this.prisma.scheduledPost.create({
       data: createScheduledPostDto as any,

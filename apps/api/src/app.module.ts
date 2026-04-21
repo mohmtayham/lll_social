@@ -38,9 +38,21 @@ import { UserInteractionModule } from './user-interaction/user-interaction.modul
 import { UserInterestModule } from './user-interest/user-interest.module';
 import { UserPrivacyModule } from './user-privacy/user-privacy.module';
 import { UserRelationshipScoreModule } from './user-relationship-score/user-relationship-score.module';
-
+import { ScheduleModule } from '@nestjs/schedule';
+import { BullModule } from '@nestjs/bullmq'; // هذه هي الصحيحة لـ BullMQ
+import { ScoreModule } from './score/score.module';
 @Module({
   imports: [
+    ScheduleModule.forRoot(), // Add this line!
+    BullModule.forRootAsync({
+      useFactory: () => ({
+        connection: {
+          host: process.env.REDIS_HOST || '127.0.0.1',
+    // إضافة String() تضمن أن القيمة نصية دائماً قبل التحويل لرقم
+      port: parseInt(String(process.env.REDIS_PORT || 6379), 10),
+        },
+      }),
+    }),
     AuthModule,
     UserModule,
     BlockModule,
@@ -75,6 +87,8 @@ import { UserRelationshipScoreModule } from './user-relationship-score/user-rela
     UserPrivacyModule,
     UserRelationshipScoreModule,
     ConfigModule.forRoot({ isGlobal: true }),
+    ScoreModule,
+
   ],
   controllers: [AppController],
   providers: [

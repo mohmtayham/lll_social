@@ -1,80 +1,149 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateFriendshipDto } from './dto/create-friendship.dto';
+import { NotificationGateway } from 'src/notification/notification.gateway';
 import { UpdateFriendshipDto } from './dto/update-friendship.dto';
+import { stat } from 'fs';
+import { useContainer } from 'class-validator';
 
 @Injectable()
 export class FriendshipService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly notificationGateway: NotificationGateway) {}
 
-  private toBigInt(value: string | number | bigint): bigint {
+private toBigInt(value: string | number | bigint): bigint {
     if (typeof value === 'bigint') return value;
     if (typeof value === 'number') return BigInt(value);
     return BigInt(value);
+}
+
+
+
+async sentrequest(senderId:number,receiverId:number) {
+const userId1 = this.toBigInt(senderId);
+const userId2 = this.toBigInt(receiverId);
+if(userId1 === userId2){
+  throw new ForbiddenException('You cannot send a friend request to yourself');
+}
+const existingFriendship = await this.prisma.friendship.findFirst({
+  where: {
+    OR: [
+      { userId1, userId2 },
+      { userId1: userId2, userId2: userId1 },
+    ],
+  },
+});
+
+if (existingFriendship) {
+  if (existingFriendship.status === 'PENDING') {
+    throw new ForbiddenException('A friend request is already pending between these users');
   }
+  if (existingFriendship.status === 'ACCEPTED') {
+    throw new ForbiddenException('These users are already friends');
+  }
+}
 
-  async create(createFriendshipDto: CreateFriendshipDto) {
-    const userId1 = this.toBigInt(createFriendshipDto.userId1);
-    const userId2 = this.toBigInt(createFriendshipDto.userId2);
+const newFriendship = await this.prisma.friendship.create({
+  data: {
+    userId1,
+    userId2,
+    status: 'PENDING',
+  },
+});
+await this.prisma.notification.create({
+  data: {
+    userId: userId2, // المستلم
+    actorId: userId1, // المرسل
+    type: 'FRIEND_REQUEST',
+    data: {
+      senderId: senderId,
+    },
+  },
+});
 
-    if (userId1 === userId2) {
-      throw new ForbiddenException('Cannot create friendship with yourself');
-    }
-
-    const existingFriendship = await this.prisma.friendship.findFirst({
-      where: {
-        OR: [
-          { userId1, userId2 },
-          { userId1: userId2, userId2: userId1 },
-        ],
-      },
-    });
-
-    if (existingFriendship) {
-      return existingFriendship;
-    }
-
-    return this.prisma.friendship.create({
+// ============== إرسال الإشعار في الوقت الفعلي ==============
+    this.notificationGateway.sendNotificationToUser(receiverId, {
+      type: 'FRIEND_REQUEST',
+      title: 'New Friend Request',
+      body: 'Someone sent you a friend request!',
       data: {
-        userId1,
-        userId2,
-        status: createFriendshipDto.status ?? 'PENDING',
-      },
+        senderId: senderId.toString(),
+        friendshipId: newFriendship.id.toString()
+      }
     });
-  }
 
-  findAll() {
-    return this.prisma.friendship.findMany();
-  }
+return newFriendship;
+}
 
-  findOne(id: string) {
-    return this.prisma.friendship.findUnique({
-      where: { id: this.toBigInt(id) },
-    });
-  }
+async approveFriendRequest(currentUserId: number,requesterId: number) {
+   
+const friend=await this.prisma.friendship.findFirst({
+where:{
+  userId1: this.toBigInt(requesterId),
+}
+})
+if(!friend){
+  throw new ForbiddenException('No pending friend request found');
+}
+if(friend.userId2 !== this.toBigInt(currentUserId)){
+  throw new ForbiddenException('You are not authorized to approve this friend request');
+}
+if(friend.status !== 'PENDING'){
+  throw new ForbiddenException('No pending friend request found');
+}
+return this.prisma.$transaction(async(tx)=>{
 
-  update(id: string, updateFriendshipDto: UpdateFriendshipDto) {
-    return this.prisma.friendship.update({
-      where: { id: this.toBigInt(id) },
-      data: {
-        status: updateFriendshipDto.status,
-      },
-    });
-  }
+//update friendship status
+const updatedFriendship = await this.prisma.friendship.update({
+  where: { id: friend.id },
+  data: { status: 'ACCEPTED' },
+});
 
-  remove(id: string) {
-    return this.prisma.friendship.delete({
-      where: { id: this.toBigInt(id) },
-    });
-  }
+const SCORE_BUMP=10;
+//UPSert score:user1->user2
+await tx.userRelationshipScore.upsert({
+  where: {
+    userId_targetUserId: {
+      userId: friend.userId1,
+      targetUserId: friend.userId2,
+    },
+  },
+  update: {
+    score: {
+      increment: SCORE_BUMP,
+    },
+  },
+  create: {
+    userId: friend.userId1,
+    targetUserId: friend.userId2,
+    score: SCORE_BUMP,
+  },
+});
 
-  async addrequest(createFriendshipDto: CreateFriendshipDto, _userId: number) {
-    return this.create(createFriendshipDto);
-  }
+//UPSsert score:user2->user1
+await tx.userRelationshipScore.upsert({
+  where: {
+    userId_targetUserId: {
+      userId: friend.userId2,
+      targetUserId: friend.userId1,
+    },
+  },
+  update: {
+    score: {
+      increment: SCORE_BUMP,
+    },
+  },
+  create: {
+    userId: friend.userId2,
+    targetUserId: friend.userId1,
+    score: SCORE_BUMP,
+  },
+});
 
-  approverequestORrejectrequest(id: string, updateFriendshipDto: UpdateFriendshipDto) {
-    return this.update(id, updateFriendshipDto);
-  }
+return updatedFriendship;
+
+})
+
+}
 
   async allMyFriends(userId: number) {
     const currentUserId = this.toBigInt(userId);
@@ -99,5 +168,23 @@ export class FriendshipService {
       return friendship.user1;
     });
   }
+
+  async isFriendWith(userId: number, otherUserId: number) {
+    const currentUserId = this.toBigInt(userId);
+    const otherUserIdBigInt = this.toBigInt(otherUserId);
+    
+    const friendship = await this.prisma.friendship.findFirst({
+      where: {
+        OR: [
+          { userId1: currentUserId, userId2: otherUserIdBigInt, status: 'ACCEPTED' },
+          { userId1: otherUserIdBigInt, userId2: currentUserId, status: 'ACCEPTED' },
+        ],
+      },
+    });
+    return !!friendship;
+  }
+
+
+
 
 }

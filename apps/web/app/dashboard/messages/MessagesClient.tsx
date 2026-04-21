@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 
+// تمثيل بيانات المستخدم المختصرة في واجهة الدردشة.
 type ChatUser = {
   id: string;
   name: string;
@@ -10,12 +11,14 @@ type ChatUser = {
   avatarMediaId?: string | null;
 };
 
+// تمثيل المشارك داخل محادثة (مع دوره).
 type ChatParticipant = {
   userId: string;
   role: 'ADMIN' | 'MEMBER';
   user: ChatUser;
 };
 
+// تمثيل الرسالة القادمة من الـ API/Socket.
 type ChatMessage = {
   id: string;
   conversationId: string;
@@ -30,6 +33,7 @@ type ChatMessage = {
   sender?: ChatUser;
 };
 
+// تمثيل محادثة في sidebar.
 type ChatConversation = {
   id: string;
   type: 'DIRECT' | 'GROUP';
@@ -40,20 +44,25 @@ type ChatConversation = {
   unreadCount?: number;
 };
 
+// خصائص العميل: توكن المصادقة + هوية المستخدم + رابط الـ backend.
 type MessagesClientProps = {
   accessToken: string;
   currentUserId: string;
   backendUrl: string;
 };
 
-// Keep one canonical sorted list and dedupe by id.
-// This protects UI from duplicate events after reconnect/retry.
+// توحيد وترتيب الرسائل:
+// 1) إزالة التكرار بالاعتماد على id
+// 2) ترتيب زمني تصاعدي (الأقدم -> الأحدث)
+// يفيد عند إعادة الاتصال أو وصول نفس الحدث أكثر من مرة.
 const asSortedUnique = (messages: ChatMessage[]) => {
   const map = new Map<string, ChatMessage>();
+  // آخر نسخة من نفس id تستبدل النسخة السابقة.
   for (const message of messages) {
     map.set(message.id, message);
   }
 
+  // تحويل map إلى array ثم ترتيب حسب createdAt.
   return [...map.values()].sort((a, b) => {
     return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
   });
@@ -64,30 +73,41 @@ export function MessagesClient({
   currentUserId,
   backendUrl,
 }: MessagesClientProps) {
+  // قائمة المحادثات في الشريط الجانبي.
   const [conversations, setConversations] = useState<ChatConversation[]>([]);
+  // المحادثة النشطة حاليا.
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
+  // رسائل المحادثة النشطة.
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // حالة تحميل المحادثات.
   const [loadingConversations, setLoadingConversations] = useState(true);
+  // حالة تحميل الرسائل.
   const [loadingMessages, setLoadingMessages] = useState(false);
+  // رسالة خطأ عامة للعرض في الواجهة.
   const [error, setError] = useState<string | null>(null);
+  // محتوى الإدخال قبل الإرسال.
   const [draft, setDraft] = useState('');
+  // userId الهدف لإنشاء Direct conversation.
   const [targetUserId, setTargetUserId] = useState('');
+  // كائن الاتصال اللحظي.
   const [socket, setSocket] = useState<Socket | null>(null);
-  // Ref is used inside socket listeners to avoid stale closure over selected conversation.
+  // ref لتفادي مشكلة stale closure داخل listeners الخاصة بالسوكِت.
   const selectedConversationIdRef = useRef<string | null>(null);
 
+  // نحدث ref في كل render حتى تقرأ listeners آخر قيمة.
   selectedConversationIdRef.current = selectedConversationId;
 
+  // استخراج المحادثة المختارة من قائمة المحادثات.
   const selectedConversation = useMemo(() => {
     if (!selectedConversationId) return null;
     return conversations.find((conversation) => conversation.id === selectedConversationId) ?? null;
   }, [conversations, selectedConversationId]);
 
   const getConversationTitle = (conversation: ChatConversation) => {
-    // If a group name exists, prefer it.
+    // إذا هناك اسم صريح للمحادثة (غالبا Group) نستخدمه مباشرة.
     if (conversation.name) return conversation.name;
 
-    // For direct chats derive title from the other participant.
+    // في المحادثة المباشرة نستنتج الاسم من الطرف الآخر.
     if (conversation.type === 'DIRECT') {
       const peer = conversation.participants.find(
         (participant) => participant.userId !== currentUserId,
@@ -97,35 +117,41 @@ export function MessagesClient({
       if (peer?.user?.username) return `@${peer.user.username}`;
     }
 
+    // fallback في حالة البيانات غير مكتملة.
     return `Conversation ${conversation.id}`;
   };
 
-  // Shared authenticated fetch wrapper for message/conversation APIs.
+  // غلاف موحد لأي طلب HTTP يحتاج Authorization.
   const authedFetch = async (url: string, options?: RequestInit) => {
     const response = await fetch(url, {
       ...options,
       headers: {
+        // backend يعتمد JSON payload.
         'Content-Type': 'application/json',
+        // Bearer token من الجلسة الحالية.
         Authorization: `Bearer ${accessToken}`,
         ...(options?.headers ?? {}),
       },
     });
 
+    // في حال الفشل نرفع Error يحتوي نص الاستجابة للعرض/التشخيص.
     if (!response.ok) {
       const body = await response.text();
       throw new Error(body || `Request failed with ${response.status}`);
     }
 
+    // إرجاع JSON النهائي للنداء.
     return response.json();
   };
 
-  // Load inbox list and auto-select first conversation when none selected.
+  // تحميل قائمة المحادثات (inbox).
   const loadConversations = async () => {
     setLoadingConversations(true);
     try {
       const data = (await authedFetch(`${backendUrl}/conversation/mine`)) as ChatConversation[];
       setConversations(data);
 
+      // إذا لا يوجد اختيار حالي ونملك محادثات، اختر أول محادثة افتراضيا.
       if (!selectedConversationIdRef.current && data.length > 0) {
         setSelectedConversationId(data[0].id);
       }
@@ -136,17 +162,19 @@ export function MessagesClient({
     }
   };
 
-  // Load message history for selected conversation and send read pointer.
+  // تحميل سجل رسائل المحادثة المختارة.
   const loadMessages = async (conversationId: string) => {
     setLoadingMessages(true);
     try {
       const data = (await authedFetch(
         `${backendUrl}/message/conversation/${conversationId}?limit=50`,
       )) as ChatMessage[];
+
+      // ترتيب/تنظيف الرسائل قبل عرضها.
       setMessages(asSortedUnique(data));
 
       if (socket) {
-        // Read up to latest loaded message so unread badge can be recomputed server-side.
+        // بعد تحميل الرسائل نرسل مؤشر القراءة عند آخر رسالة معروضة.
         socket.emit('message:read', {
           conversationId,
           messageId: data[data.length - 1]?.id,
@@ -159,10 +187,11 @@ export function MessagesClient({
     }
   };
 
-  // Create a direct conversation by target user id.
+  // إنشاء محادثة مباشرة مع مستخدم عبر userId.
   const createDirectConversation = async (event: FormEvent) => {
     event.preventDefault();
 
+    // نتجاهل القيمة الفارغة.
     const trimmed = targetUserId.trim();
     if (!trimmed) return;
 
@@ -170,11 +199,13 @@ export function MessagesClient({
       const created = (await authedFetch(`${backendUrl}/conversation`, {
         method: 'POST',
         body: JSON.stringify({
+          // نطلب صراحة Direct conversation.
           type: 'DIRECT',
           participantIds: [trimmed],
         }),
       })) as ChatConversation;
 
+      // تنظيف الإدخال ثم إعادة التحميل وتحديد المحادثة الجديدة.
       setTargetUserId('');
       await loadConversations();
       setSelectedConversationId(created.id);
@@ -183,10 +214,12 @@ export function MessagesClient({
     }
   };
 
-  // Send flow:
-  // 1) optimistic clear input
-  // 2) send via socket if connected
-  // 3) fallback to HTTP when socket is not ready
+  // إرسال رسالة جديدة:
+  // 1) التحقق من وجود محادثة ونص
+  // 2) تجهيز payload
+  // 3) التفريغ المتفائل لحقل الإدخال
+  // 4) الإرسال عبر Socket إن كان متصلا
+  // 5) fallback عبر HTTP إن كان السوكِت غير جاهز
   const sendMessage = async (event: FormEvent) => {
     event.preventDefault();
 
@@ -198,19 +231,23 @@ export function MessagesClient({
       messageType: 'TEXT',
     };
 
+    // تفريغ الحقل مباشرة لتحسين الإحساس بالسرعة.
     setDraft('');
 
     if (socket?.connected) {
+      // المسار الأساسي: حدث Socket فوري.
       socket.emit('message:send', payload);
       return;
     }
 
     try {
+      // المسار البديل: REST API.
       const created = (await authedFetch(`${backendUrl}/message`, {
         method: 'POST',
         body: JSON.stringify(payload),
       })) as ChatMessage;
 
+      // تحديث محلي في حال fallback.
       setMessages((prev) => asSortedUnique([...prev, created]));
       void loadConversations();
     } catch (e) {
@@ -218,13 +255,14 @@ export function MessagesClient({
     }
   };
 
-  // Initial inbox load on first render.
+  // تحميل inbox مرة واحدة عند أول render.
   useEffect(() => {
     void loadConversations();
   }, []);
 
-  // Socket lifecycle setup with all server event subscriptions.
+  // دورة حياة Socket كاملة (إنشاء + listeners + cleanup).
   useEffect(() => {
+    // فتح اتصال Namespace /chat مع تمرير token في handshake.
     const chatSocket = io(`${backendUrl}/chat`, {
       transports: ['websocket'],
       auth: {
@@ -233,7 +271,7 @@ export function MessagesClient({
     });
 
     chatSocket.on('connect', () => {
-      // Re-join active room after reconnect.
+      // بعد أي reconnect نعيد الانضمام لغرفة المحادثة النشطة.
       if (selectedConversationIdRef.current) {
         chatSocket.emit('conversation:join', {
           conversationId: selectedConversationIdRef.current,
@@ -241,18 +279,22 @@ export function MessagesClient({
       }
     });
 
+    // استقبال أخطاء العمل القادمة من gateway.
     chatSocket.on('chat:error', (payload: { message?: string }) => {
       setError(payload?.message ?? 'Socket error');
     });
 
+    // رسالة جديدة وصلت من السيرفر.
     chatSocket.on('message:new', (message: ChatMessage) => {
-      // Only append to currently open thread; always refresh inbox metadata.
+      // نضيفها فقط إذا كانت في المحادثة المفتوحة حاليا.
       if (message.conversationId === selectedConversationIdRef.current) {
         setMessages((prev) => asSortedUnique([...prev, message]));
       }
+      // ونحدّث inbox دائما لأن آخر رسالة/الترتيب قد يتغيران.
       void loadConversations();
     });
 
+    // تعديل رسالة موجودة.
     chatSocket.on('message:updated', (message: ChatMessage) => {
       if (message.conversationId === selectedConversationIdRef.current) {
         setMessages((prev) => asSortedUnique([...prev, message]));
@@ -260,6 +302,7 @@ export function MessagesClient({
       void loadConversations();
     });
 
+    // حذف رسالة موجودة.
     chatSocket.on('message:deleted', (message: ChatMessage) => {
       if (message.conversationId === selectedConversationIdRef.current) {
         setMessages((prev) => asSortedUnique([...prev, message]));
@@ -267,26 +310,29 @@ export function MessagesClient({
       void loadConversations();
     });
 
+    // تحديث عام على المحادثة (unread/lastMessage/participants...).
     chatSocket.on('conversation:updated', () => {
-      // Keep sidebar order/unread values synchronized.
+      // مزامنة sidebar باستمرار مع الحالة الفعلية على السيرفر.
       void loadConversations();
     });
 
+    // حفظ socket في state للوصول له في أجزاء أخرى.
     setSocket(chatSocket);
 
     return () => {
-      // Prevent duplicate listeners and release socket on unmount.
+      // تنظيف كامل لتفادي تكرار listeners وتسريب الاتصال.
       chatSocket.disconnect();
       setSocket(null);
     };
   }, [accessToken, backendUrl]);
 
-  // Whenever active conversation changes:
-  // - fetch recent history
-  // - join conversation room for real-time events
-  // - leave previous room in cleanup
+  // عند تغيير المحادثة النشطة:
+  // 1) تحميل التاريخ
+  // 2) الانضمام لغرفة المحادثة
+  // 3) مغادرة الغرفة السابقة عند cleanup
   useEffect(() => {
     if (!selectedConversationId) {
+      // لا يوجد اختيار => نفرغ الرسائل المعروضة.
       setMessages([]);
       return;
     }
@@ -295,9 +341,11 @@ export function MessagesClient({
 
     if (!socket) return;
 
+    // انضمام لحظي لغرفة المحادثة المختارة.
     socket.emit('conversation:join', { conversationId: selectedConversationId });
 
     return () => {
+      // مغادرة الغرفة عند تغيير الاختيار أو تفكيك المكون.
       socket.emit('conversation:leave', { conversationId: selectedConversationId });
     };
   }, [selectedConversationId, socket]);

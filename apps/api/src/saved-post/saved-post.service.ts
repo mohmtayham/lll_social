@@ -8,9 +8,14 @@ export class SavedPostService {
   constructor(private readonly prisma: PrismaService) {}
 
   create(createSavedPostDto: CreateSavedPostDto) {
-    return this.prisma.savedPost.create({
-      data: createSavedPostDto as any,
+  const post = this.prisma.savedPost.create({
+      data: {
+        userId: BigInt(createSavedPostDto.userId) as any,
+        postId: BigInt(createSavedPostDto.postId) as any,
+      },
     });
+    return post;  
+    
   }
 
   findAll() {

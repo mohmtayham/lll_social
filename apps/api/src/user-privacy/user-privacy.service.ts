@@ -7,15 +7,12 @@ import { UpdateUserPrivacyDto } from './dto/update-user-privacy.dto';
 export class UserPrivacyService {
   constructor(private readonly prisma: PrismaService) {}
 
-  create(createUserPrivacyDto: CreateUserPrivacyDto) {
-    return this.prisma.userPrivacy.create({
-      data: createUserPrivacyDto as any,
-    });
+  create(createUserPrivacyDto: CreateUserPrivacyDto,postId: string) {
+    const privacy = this.prisma.userPrivacy.create({
+      where:
+
   }
 
-  findAll() {
-    return this.prisma.userPrivacy.findMany();
-  }
   findOne(id: string) {
     return this.prisma.userPrivacy.findUnique({
       where: { userId: BigInt(id) } as any,
@@ -29,9 +26,4 @@ export class UserPrivacyService {
     });
   }
 
-  remove(id: string) {
-    return this.prisma.userPrivacy.delete({
-      where: { userId: BigInt(id) } as any,
-    });
-  }
 }

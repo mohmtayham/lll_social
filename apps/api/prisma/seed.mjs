@@ -507,13 +507,12 @@ async function seed() {
         blockedId: charlie.id,
       },
     },
-    update: {
-      reason: 'Temporary mute from repeated spam links',
-    },
+    update: {},
+  
     create: {
       blockerId: bob.id,
       blockedId: charlie.id,
-      reason: 'Temporary mute from repeated spam links',
+    
     },
   });
 

@@ -1,11 +1,23 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreatePostDto } from './dto/create-post.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
 
 @Injectable()
 export class PostService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @InjectQueue('post-scheduling') private readonly schedulingQueue: Queue,
+  ) {}
+
+  extractHashtags(content: string): string[] {
+    const regex = /#[\w\u0600-\u06FF]+/g;
+    const matches = content.match(regex);
+    if (!matches) return [];
+    return [...new Set(matches.map(tag => tag.slice(1).toLowerCase()))];
+  }
 
   private toBigInt(value: string | number | bigint): bigint {
     if (typeof value === 'bigint') return value;
@@ -13,7 +25,36 @@ export class PostService {
     return BigInt(value);
   }
 
+  async schedulePost(userId: string, data: any) {
+    const scheduledFor = new Date(data.scheduledAt);
+    if (Number.isNaN(scheduledFor.getTime())) {
+      throw new BadRequestException('Invalid scheduledAt value');
+    }
+
+    const scheduledPost = await this.prisma.scheduledPost.create({
+      data: {
+        userId: this.toBigInt(userId),
+        content: data.content ?? null,
+        visibility: data.visibility,
+        feeling: data.feeling,
+        location: data.location,
+        scheduledFor,
+      },
+    });
+
+    const delay = Math.max(scheduledFor.getTime() - Date.now(), 0);
+
+    await this.schedulingQueue.add(
+      'publish-post',
+      { scheduledPostId: scheduledPost.id.toString() },
+      { delay },
+    );
+
+    return scheduledPost;
+  }
+
   async create(createPostDto: CreatePostDto) {
+    const hashtags = this.extractHashtags(createPostDto.content || '');
     const { mediaIds, ...rest } = createPostDto;
     const userId = this.toBigInt(createPostDto.userId);
 
@@ -29,6 +70,28 @@ export class PostService {
         },
       });
 
+      // Process hashtags
+      if (hashtags.length > 0) {
+        for (const tag of hashtags) {
+          const hashtagRecord = await tx.hashtag.upsert({
+            where: { nameLower: tag },
+            update: {},
+            create: {
+              name: tag,
+              nameLower: tag,
+            },
+          });
+
+          await tx.postHashtag.create({
+            data: {
+              postId: post.id,
+              hashtagId: hashtagRecord.id,
+            },
+          });
+        }
+      }
+
+      // Process media
       if (mediaIds?.length) {
         await tx.postMedia.createMany({
           data: mediaIds.map((mediaId) => ({
@@ -87,9 +150,28 @@ export class PostService {
   }
 
   remove(id: string) {
-  return this.prisma.post.delete({
+    return this.prisma.post.delete({
       where: { id: this.toBigInt(id) },
     });
   }
 
+  async sharePost(userId: number, originalPostId: string, quoteContent?: string) {
+    const targetPostId = this.toBigInt(originalPostId);
+
+    // 1. التأكد أن المنشور الأصلي موجود
+    const originalPost = await this.prisma.post.findUnique({
+      where: { id: targetPostId },
+    });
+
+    if (!originalPost) throw new NotFoundException('Post not found');
+
+    // 2. إنشاء المنشور كـ "مشاركة"
+    return this.prisma.post.create({
+      data: {
+        userId: this.toBigInt(userId),
+        content: quoteContent || null,
+        sharedPostId: targetPostId,
+      },
+    });
+  }
 }
