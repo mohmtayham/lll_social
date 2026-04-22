@@ -1,4 +1,4 @@
-import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsEnum, IsOptional, IsString } from 'class-validator';
 import { MessageType } from '@prisma/client';
 export class CreateMessageDto {
   @IsString()
@@ -19,4 +19,7 @@ export class CreateMessageDto {
   @IsOptional()
   @IsString()
   clientMessageId?: string;
+   @IsOptional()
+    @IsArray()
+    messageAttachment?: bigint[];
 }

@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { CreateUserDto } from './dto/create-user.dto';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { Role } from '@prisma/client';
+
 import { hash } from 'argon2';
 
 @Injectable()
@@ -20,6 +22,7 @@ export class UserService {
       data: {
         password: hashedPassword,
         ...user,
+        role: user.role || Role.USER,
       },
     });
   }

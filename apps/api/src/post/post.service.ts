@@ -26,19 +26,19 @@ export class PostService {
   }
 
   async schedulePost(userId: string, data: any) {
-    const scheduledFor = new Date(data.scheduledAt);
+    const scheduledFor = new Date(data.scheduledAt ?? data.scheduledFor);
     if (Number.isNaN(scheduledFor.getTime())) {
       throw new BadRequestException('Invalid scheduledAt value');
     }
 
-    const scheduledPost = await this.prisma.scheduledPost.create({
+    const scheduledPost = await this.prisma.post.create({
       data: {
         userId: this.toBigInt(userId),
         content: data.content ?? null,
         visibility: data.visibility,
         feeling: data.feeling,
         location: data.location,
-        scheduledFor,
+        status: 'PENDING',
       },
     });
 

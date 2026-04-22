@@ -19,7 +19,7 @@ export class PostSchedulingProcessor extends WorkerHost {
     }
 
     const scheduledPostId = BigInt(scheduledPostIdRaw);
-    const scheduledPost = await this.prisma.scheduledPost.findUnique({
+    const scheduledPost = await this.prisma.post.findUnique({
       where: { id: scheduledPostId },
       include: { media: true },
     });
@@ -36,32 +36,9 @@ export class PostSchedulingProcessor extends WorkerHost {
       return;
     }
 
-    // Publish in a single transaction to avoid partial state.
-    await this.prisma.$transaction(async (tx) => {
-      const post = await tx.post.create({
-        data: {
-          userId: scheduledPost.userId,
-          content: scheduledPost.content,
-          visibility: scheduledPost.visibility,
-          feeling: scheduledPost.feeling,
-          location: scheduledPost.location,
-        },
-      });
-
-      if (scheduledPost.media.length > 0) {
-        await tx.postMedia.createMany({
-          data: scheduledPost.media.map((item) => ({
-            postId: post.id,
-            mediaId: item.mediaId,
-          })),
-          skipDuplicates: true,
-        });
-      }
-
-      await tx.scheduledPost.update({
-        where: { id: scheduledPostId },
-        data: { status: 'PUBLISHED' },
-      });
+    await this.prisma.post.update({
+      where: { id: scheduledPostId },
+      data: { status: 'PUBLISHED' },
     });
 
     this.logger.log(`Scheduled post ${scheduledPostIdRaw} has been published.`);

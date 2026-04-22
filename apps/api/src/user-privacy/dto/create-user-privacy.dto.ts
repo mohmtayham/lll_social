@@ -1,6 +1,11 @@
-import { IsEnum, IsOptional } from 'class-validator';
+import { IsEnum, IsOptional, IsString } from 'class-validator';
 import { PostVisibility, WhoCanAddFriend, WhoCanMessage, WhoCanSeeStory, WhoCanTag } from '@prisma/client';
 export class CreateUserPrivacyDto {
+  @IsOptional()
+  @IsString()
+  userId?: string|bigint;
+
+  
   @IsOptional()
   @IsEnum(WhoCanMessage)
   whoCanMessage?: WhoCanMessage;

@@ -34,13 +34,16 @@ export class AuthService {
       ...createUserDto,
       email: normalizedEmail,
     });
-
     // Never return raw Prisma user here because it contains BigInt fields and hashed password.
     return {
       id: createdUser.id.toString(),
       name: createdUser.name,
       email: createdUser.email,
+     country : createdUser.country,
+      gender : createdUser.gender,
+      city : createdUser.city,
       role: createdUser.role,
+    
     };
   }
   async validateLocalUser(email: string, password: string) {

@@ -43,6 +43,7 @@ export class MessageService {
   // 3) persist message
   // 4) update conversation last activity pointers
   async sendMessage(userIdRaw: string | number | bigint, createMessageDto: CreateMessageDto) {
+    const attachment = createMessageDto.messageAttachment;
     const senderId = this.toBigInt(userIdRaw);
     const conversationId = this.toBigInt(createMessageDto.conversationId);
 
@@ -91,6 +92,29 @@ export class MessageService {
         },
       },
     });
+
+if (attachment?.length) {
+      await this.prisma.messageAttachment.createMany({
+        data: attachment.map((mediaId) => ({
+          messageId: message.id,
+          mediaId: this.toBigInt(mediaId),
+        })),
+      });
+    }
+
+      // Process media
+      // if (mediaIds?.length) {
+      //   await tx.postMedia.createMany({
+      //     data: mediaIds.map((mediaId) => ({
+      //       postId: post.id,
+      //       mediaId: this.toBigInt(mediaId),
+      //     })),
+      //     skipDuplicates: true,
+      //   });
+      // }
+
+    //   return post;
+    // });
 
     // Keep conversation row denormalized with latest message meta for fast inbox queries.
     await this.prisma.conversation.update({

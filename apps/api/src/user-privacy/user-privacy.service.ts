@@ -7,11 +7,59 @@ import { UpdateUserPrivacyDto } from './dto/update-user-privacy.dto';
 export class UserPrivacyService {
   constructor(private readonly prisma: PrismaService) {}
 
-  create(createUserPrivacyDto: CreateUserPrivacyDto,postId: string) {
-    const privacy = this.prisma.userPrivacy.create({
-      where:
 
+  private toBigInt(value: string | number | bigint|undefined): bigint {
+    if (typeof value === 'bigint') return value;
+    if (typeof value === 'number') return BigInt(value);
+    if(typeof value ==='undefined') throw new Error('Value is undefined'); // أو تعامل معها كخطأ
+    return BigInt(value);
   }
+
+//  return this.prisma.mention.create({
+//       data: {
+//         userId: this.toBigInt(createMentionDto.userId),
+//         mentionedInType: createMentionDto.mentionedInType,
+//         mentionedInId: this.toBigInt(createMentionDto.mentionedInId),
+//       },
+
+  create(createUserPrivacyDto: CreateUserPrivacyDto) {
+    // 1. التحقق من وجود الـ userId أولاً
+  if (!createUserPrivacyDto.userId) {
+    throw new Error('UserId is required'); 
+  }
+
+const existingPrivacy = this.prisma.userPrivacy.findUnique({
+  
+  where: { userId: this.toBigInt(createUserPrivacyDto.userId)}, 
+});
+
+    const privacy = this.prisma.userPrivacy.create({
+ 
+    data: createUserPrivacyDto as any,
+  
+   });
+   return privacy;
+  }
+async updateOrCreatePrivacy(createUserPrivacyDto: CreateUserPrivacyDto) {
+  const userId = this.toBigInt(createUserPrivacyDto.userId);
+
+  return await this.prisma.userPrivacy.upsert({
+    where: { 
+      userId: userId 
+    },
+    // في حال وجد السجل (تحديث)
+    update: {
+      ...createUserPrivacyDto,
+      userId: userId, // للتأكد من ثبات المعرف
+    },
+    // في حال لم يجد السجل (إنشاء جديد)
+    create: {
+      ...createUserPrivacyDto,
+      userId: userId,
+    },
+  });
+}
+
 
   findOne(id: string) {
     return this.prisma.userPrivacy.findUnique({

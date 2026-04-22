@@ -47,9 +47,10 @@ import { ScoreModule } from './score/score.module';
     BullModule.forRootAsync({
       useFactory: () => ({
         connection: {
-          host: process.env.REDIS_HOST || '127.0.0.1',
-    // إضافة String() تضمن أن القيمة نصية دائماً قبل التحويل لرقم
-      port: parseInt(String(process.env.REDIS_PORT || 6379), 10),
+          host: process.env.LOCAL_REDIS_HOST || '127.0.0.1',
+          // Keep Redis local by default to avoid accidental Docker host values.
+          port: parseInt(String(process.env.LOCAL_REDIS_PORT || 6379), 10),
+          skipVersionCheck: process.env.BULLMQ_SKIP_VERSION_CHECK !== 'false',
         },
       }),
     }),

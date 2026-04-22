@@ -58,6 +58,7 @@ enum WhoCanTag {
 }
 
 enum ScheduledPostStatus {
+  DIRECT   
   PENDING   @map("pending")
   PUBLISHED @map("published")
   CANCELLED @map("cancelled")
@@ -156,7 +157,7 @@ model User {
   mediaUploads             Media[]                   @relation("MediaUploadedBy")
   posts                    Post[]
   allowedPosts             PostAllowedUser[]
-  scheduledPosts           ScheduledPost[]
+  
   comments                 Comment[]
   reactions                Reaction[]
   friendshipsInitiated     Friendship[]              @relation("FriendshipUser1")
@@ -211,7 +212,7 @@ model Media {
   avatarForUsers      User[]               @relation("UserAvatarMedia")
   coverForUsers       User[]               @relation("UserCoverMedia")
   postMedia           PostMedia[]
-  scheduledPostMedia  ScheduledPostMedia[]
+ 
   messageAttachments  MessageAttachment[]
   conversationAvatars Conversation[]       @relation("ConversationAvatarMedia")
 
@@ -222,6 +223,7 @@ model Media {
 model Post {
   id         BigInt         @id @default(autoincrement()) @db.UnsignedBigInt
   userId     BigInt         @map("user_id") @db.UnsignedBigInt
+  viewsCount   Int      @default(0) @map("views_count") 
   content    String?        @db.Text
   visibility PostVisibility @default(PUBLIC)
   feeling    String?        @db.VarChar(50)
@@ -230,6 +232,7 @@ model Post {
   createdAt  DateTime       @default(now()) @map("created_at") @db.Timestamp(0)
   updatedAt  DateTime       @updatedAt @map("updated_at") @db.Timestamp(0)
   deletedAt  DateTime?      @map("deleted_at") @db.Timestamp(0)
+  status     ScheduledPostStatus? 
   sharedPostId BigInt?  @map("shared_post_id") @db.UnsignedBigInt
   sharedPost   Post?    @relation("PostShares", fields: [sharedPostId], references: [id])
   shares       Post[]   @relation("PostShares")

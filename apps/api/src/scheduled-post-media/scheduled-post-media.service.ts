@@ -7,46 +7,69 @@ import { UpdateScheduledPostMediaDto } from './dto/update-scheduled-post-media.d
 export class ScheduledPostMediaService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private toBigInt(value: string | number | bigint): bigint {
+    return typeof value === 'bigint' ? value : BigInt(value);
+  }
+
   create(createScheduledPostMediaDto: CreateScheduledPostMediaDto) {
-    return this.prisma.scheduledPostMedia.create({
-      data: createScheduledPostMediaDto as any,
+    const dto = createScheduledPostMediaDto as {
+      postId?: string | number | bigint;
+      scheduledPostId?: string | number | bigint;
+      mediaId?: string | number | bigint;
+    };
+
+    return this.prisma.postMedia.create({
+      data: {
+        postId: this.toBigInt(dto.postId ?? dto.scheduledPostId ?? 0),
+        mediaId: this.toBigInt(dto.mediaId ?? 0),
+      },
     });
   }
 
   findAll() {
-    return this.prisma.scheduledPostMedia.findMany();
+    return this.prisma.postMedia.findMany();
   }
   findOne(scheduledPostId: string, mediaId: string) {
-    return this.prisma.scheduledPostMedia.findUnique({
+    return this.prisma.postMedia.findUnique({
       where: {
-        scheduledPostId_mediaId: {
-        scheduledPostId: BigInt(scheduledPostId),
-        mediaId: BigInt(mediaId),
+        postId_mediaId: {
+        postId: this.toBigInt(scheduledPostId),
+        mediaId: this.toBigInt(mediaId),
         },
-      } as any,
+      },
     });
   }
 
   update(scheduledPostId: string, mediaId: string, updateScheduledPostMediaDto: UpdateScheduledPostMediaDto) {
-    return this.prisma.scheduledPostMedia.update({
+    const dto = updateScheduledPostMediaDto as {
+      mediaId?: string | number | bigint;
+    };
+
+    return this.prisma.postMedia.upsert({
       where: {
-        scheduledPostId_mediaId: {
-        scheduledPostId: BigInt(scheduledPostId),
-        mediaId: BigInt(mediaId),
+        postId_mediaId: {
+        postId: this.toBigInt(scheduledPostId),
+        mediaId: this.toBigInt(mediaId),
         },
-      } as any,
-      data: updateScheduledPostMediaDto as any,
+      },
+      update: {
+        mediaId: this.toBigInt(dto.mediaId ?? mediaId),
+      },
+      create: {
+        postId: this.toBigInt(scheduledPostId),
+        mediaId: this.toBigInt(dto.mediaId ?? mediaId),
+      },
     });
   }
 
   remove(scheduledPostId: string, mediaId: string) {
-    return this.prisma.scheduledPostMedia.delete({
+    return this.prisma.postMedia.delete({
       where: {
-        scheduledPostId_mediaId: {
-        scheduledPostId: BigInt(scheduledPostId),
-        mediaId: BigInt(mediaId),
+        postId_mediaId: {
+        postId: this.toBigInt(scheduledPostId),
+        mediaId: this.toBigInt(mediaId),
         },
-      } as any,
+      },
     });
   }
 }

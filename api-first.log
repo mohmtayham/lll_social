@@ -1,0 +1,6 @@
+
+> api@0.0.1 dev C:\react\lll_social\apps\api
+> node ./scripts/dev-singleton.mjs
+
+[predev] Port 8000 is free.
+ ELIFECYCLE  Command failed with exit code 1.

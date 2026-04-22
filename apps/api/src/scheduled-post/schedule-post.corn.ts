@@ -12,12 +12,9 @@ export class SchedulePostCronService {
 	async publishScheduledPosts() {
 		this.logger.log('Running scheduled post publishing job...');
 
-		const dueCount = await this.prisma.scheduledPost.count({
+		const dueCount = await this.prisma.post.count({
 			where: {
 				status: 'PENDING',
-				scheduledFor: {
-					lte: new Date(),
-				},
 			},
 		});
 

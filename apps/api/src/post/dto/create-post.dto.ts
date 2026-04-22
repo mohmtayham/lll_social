@@ -23,7 +23,7 @@ export class CreatePostDto {
   @IsOptional()
   @IsBoolean()
   isEdited?: boolean;
-    @IsOptional()
+  @IsOptional()
   @IsArray()
   mediaIds?: bigint[];
 }

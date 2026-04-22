@@ -35,7 +35,7 @@ async registerUser(@Body() createUserDto: CreateUserDto) {
     console.log('✅ Registration Successful in DB');
     return result;
   } catch (error) {
-    console.error('❌ Service Layer Error:', error.message);
+    console.error('❌ Service Layer Error:', `{error.message} as any`);
     throw error;
   }
 }

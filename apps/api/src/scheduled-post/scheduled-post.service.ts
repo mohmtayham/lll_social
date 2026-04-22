@@ -7,34 +7,51 @@ import { UpdateScheduledPostDto } from './dto/update-scheduled-post.dto';
 export class ScheduledPostService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private toBigInt(value: string | number | bigint): bigint {
+    return typeof value === 'bigint' ? value : BigInt(value);
+  }
 
 
   
   create(createScheduledPostDto: CreateScheduledPostDto) {
-    return this.prisma.scheduledPost.create({
-      data: createScheduledPostDto as any,
+    const { userId, scheduledFor, status, ...rest } = createScheduledPostDto;
+
+    return this.prisma.post.create({
+      data: {
+        userId: this.toBigInt(userId),
+        status: status ?? 'PENDING',
+        ...rest,
+      },
     });
   }
 
   findAll() {
-    return this.prisma.scheduledPost.findMany();
+    return this.prisma.post.findMany({ where: { status: 'PENDING' } });
   }
   findOne(id: string) {
-    return this.prisma.scheduledPost.findUnique({
-      where: { id: BigInt(id) } as any,
+    return this.prisma.post.findFirst({
+      where: {
+        id: this.toBigInt(id),
+        status: 'PENDING',
+      },
     });
   }
 
   update(id: string, updateScheduledPostDto: UpdateScheduledPostDto) {
-    return this.prisma.scheduledPost.update({
-      where: { id: BigInt(id) } as any,
-      data: updateScheduledPostDto as any,
+    const { userId, scheduledFor, ...rest } = updateScheduledPostDto;
+
+    return this.prisma.post.update({
+      where: { id: this.toBigInt(id) },
+      data: {
+        ...(userId ? { userId: this.toBigInt(userId) } : {}),
+        ...rest,
+      },
     });
   }
 
   remove(id: string) {
-    return this.prisma.scheduledPost.delete({
-      where: { id: BigInt(id) } as any,
+    return this.prisma.post.delete({
+      where: { id: this.toBigInt(id) },
     });
   }
 }

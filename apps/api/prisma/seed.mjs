@@ -344,37 +344,6 @@ async function seed() {
     });
   }
 
-  const scheduledFor = new Date(Date.now() + 24 * 60 * 60 * 1000);
-  const scheduledPost = await findFirstOrCreate(
-    prisma.scheduledPost,
-    {
-      userId: charlie.id,
-      content: 'Tomorrow update: moderation transparency report.',
-    },
-    {
-      userId: charlie.id,
-      content: 'Tomorrow update: moderation transparency report.',
-      visibility: PostVisibility.PUBLIC,
-      status: ScheduledPostStatus.PENDING,
-      scheduledFor,
-      location: 'Giza',
-      feeling: 'grateful',
-    },
-  );
-
-  await prisma.scheduledPostMedia.upsert({
-    where: {
-      scheduledPostId_mediaId: {
-        scheduledPostId: scheduledPost.id,
-        mediaId: postImage.id,
-      },
-    },
-    update: {},
-    create: {
-      scheduledPostId: scheduledPost.id,
-      mediaId: postImage.id,
-    },
-  });
 
   const commentBob = await findFirstOrCreate(
     prisma.comment,
