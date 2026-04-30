@@ -1,14 +1,16 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { CreateFriendshipDto } from './dto/create-friendship.dto';
 import { NotificationGateway } from 'src/notification/notification.gateway';
-import { UpdateFriendshipDto } from './dto/update-friendship.dto';
-import { stat } from 'fs';
-import { useContainer } from 'class-validator';
 
 @Injectable()
 export class FriendshipService {
-  constructor(private readonly prisma: PrismaService, private readonly notificationGateway: NotificationGateway) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationGateway: NotificationGateway,
+    @InjectQueue('graph-sync') private readonly graphQueue: Queue,
+  ) {}
 
 private toBigInt(value: string | number | bigint): bigint {
     if (typeof value === 'bigint') return value;
@@ -79,21 +81,17 @@ async approveFriendRequest(currentUserId: number,requesterId: number) {
 const friend=await this.prisma.friendship.findFirst({
 where:{
   userId1: this.toBigInt(requesterId),
+  userId2: this.toBigInt(currentUserId),
+  status: 'PENDING',
 }
 })
 if(!friend){
   throw new ForbiddenException('No pending friend request found');
 }
-if(friend.userId2 !== this.toBigInt(currentUserId)){
-  throw new ForbiddenException('You are not authorized to approve this friend request');
-}
-if(friend.status !== 'PENDING'){
-  throw new ForbiddenException('No pending friend request found');
-}
-return this.prisma.$transaction(async(tx)=>{
+const updatedFriendship = await this.prisma.$transaction(async(tx)=>{
 
 //update friendship status
-const updatedFriendship = await this.prisma.friendship.update({
+const updated = await tx.friendship.update({
   where: { id: friend.id },
   data: { status: 'ACCEPTED' },
 });
@@ -139,9 +137,21 @@ await tx.userRelationshipScore.upsert({
   },
 });
 
-return updatedFriendship;
+return updated;
 
-})
+});
+
+await this.graphQueue.add('sync-friendship', {
+  userId1: friend.userId1.toString(),
+  userId2: friend.userId2.toString(),
+}, {
+  attempts: 3,
+  backoff: { type: 'exponential', delay: 1000 },
+  removeOnComplete: true,
+  removeOnFail: false,
+});
+
+return updatedFriendship;
 
 }
 

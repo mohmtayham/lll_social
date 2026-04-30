@@ -7,4 +7,8 @@ import { UpdateScoreDto } from './dto/update-score.dto';
 export class ScoreController {
   constructor(private readonly scoreService: ScoreService) {}
 
+  @Post('decay')
+  triggerScoreDecay() {
+    return this.scoreService.enqueueDecayJob();
+  }
 }

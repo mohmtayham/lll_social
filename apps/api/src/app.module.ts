@@ -7,6 +7,7 @@ import { UserModule } from './user/user.module';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtAuthGuard } from './auth/guards/jwt-auth/jwt-auth.guard';
+import { RedisModule } from './redis/redis.module';
 import { BlockModule } from './block/block.module';
 import { CommentModule } from './comment/comment.module';
 import { CommentEditModule } from './comment-edit/comment-edit.module';
@@ -41,6 +42,9 @@ import { UserRelationshipScoreModule } from './user-relationship-score/user-rela
 import { ScheduleModule } from '@nestjs/schedule';
 import { BullModule } from '@nestjs/bullmq'; // هذه هي الصحيحة لـ BullMQ
 import { ScoreModule } from './score/score.module';
+import { GraphSyncModule } from './graph-sync/graph-sync.module';
+import { Neo4jModule } from './neo4j/neo4j.module';
+import { QueueModule } from './queue/queue.module';
 @Module({
   imports: [
     ScheduleModule.forRoot(), // Add this line!
@@ -54,6 +58,7 @@ import { ScoreModule } from './score/score.module';
         },
       }),
     }),
+    RedisModule,
     AuthModule,
     UserModule,
     BlockModule,
@@ -89,6 +94,9 @@ import { ScoreModule } from './score/score.module';
     UserRelationshipScoreModule,
     ConfigModule.forRoot({ isGlobal: true }),
     ScoreModule,
+    GraphSyncModule,
+    Neo4jModule,
+    QueueModule,
 
   ],
   controllers: [AppController],

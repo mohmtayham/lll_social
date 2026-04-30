@@ -9,6 +9,12 @@ import { PrismaModule } from 'src/prisma/prisma.module';
   imports: [
     BullModule.registerQueue({
       name: 'score-decay', // اسم الطابور في Redis
+      defaultJobOptions: {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 5000 },
+        removeOnComplete: true,
+        removeOnFail: false,
+      },
     }),
     PrismaModule,
   ],

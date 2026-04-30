@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "node ./scripts/free-port.mjs && next dev --webpack",
+    "dev:turbo": "node ./scripts/free-port.mjs && next dev --turbo",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"

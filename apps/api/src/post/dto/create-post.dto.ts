@@ -1,8 +1,6 @@
 import { IsArray, IsBoolean, IsEnum, IsOptional, IsString } from 'class-validator';
 import { PostVisibility } from '@prisma/client';
 export class CreatePostDto {
-  @IsString()
-  userId: string;
 
   @IsOptional()
   @IsString()

@@ -12,7 +12,7 @@ async function bootstrap() {
     origin: allowedOrigins,
     credentials: true,
   });
-
+app.enableShutdownHooks();
   // يجب وضع الـ Pipes قبل الـ listen
   app.useGlobalPipes(new ValidationPipe({
     whitelist: true,

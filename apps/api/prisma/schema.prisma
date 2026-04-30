@@ -13,6 +13,23 @@ enum Role {
   EDITOR    @map("editor")
   MODERATOR @map("moderator")
 }
+enum GroupPrivacy {
+  PUBLIC  @map("public")
+  PRIVATE @map("private")
+  HIDDEN  @map("hidden")
+}
+
+enum GroupMemberRole {
+  ADMIN     @map("admin")
+  MODERATOR @map("moderator")
+  MEMBER    @map("member")
+}
+
+enum GroupMemberStatus {
+  PENDING  @map("pending")
+  APPROVED @map("approved")
+  BANNED   @map("banned")
+}
 
 enum Gender {
   MALE              @map("male")
@@ -157,7 +174,8 @@ model User {
   mediaUploads             Media[]                   @relation("MediaUploadedBy")
   posts                    Post[]
   allowedPosts             PostAllowedUser[]
-  
+  groupsCreated    Group[]       @relation("GroupCreator")
+  groupMemberships GroupMember[]
   comments                 Comment[]
   reactions                Reaction[]
   friendshipsInitiated     Friendship[]              @relation("FriendshipUser1")
@@ -207,7 +225,8 @@ model Media {
   uploadedBy   BigInt   @map("uploaded_by") @db.UnsignedBigInt
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamp(0)
   updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
-
+  avatarForGroups Group[] @relation("GroupAvatarMedia")
+  coverForGroups  Group[] @relation("GroupCoverMedia")
   uploader            User                 @relation("MediaUploadedBy", fields: [uploadedBy], references: [id], onDelete: Cascade, onUpdate: Cascade)
   avatarForUsers      User[]               @relation("UserAvatarMedia")
   coverForUsers       User[]               @relation("UserCoverMedia")
@@ -223,7 +242,7 @@ model Media {
 model Post {
   id         BigInt         @id @default(autoincrement()) @db.UnsignedBigInt
   userId     BigInt         @map("user_id") @db.UnsignedBigInt
-  viewsCount   Int      @default(0) @map("views_count") 
+  viewsCount   Int          @default(0) @map("views_count") 
   content    String?        @db.Text
   visibility PostVisibility @default(PUBLIC)
   feeling    String?        @db.VarChar(50)
@@ -232,7 +251,7 @@ model Post {
   createdAt  DateTime       @default(now()) @map("created_at") @db.Timestamp(0)
   updatedAt  DateTime       @updatedAt @map("updated_at") @db.Timestamp(0)
   deletedAt  DateTime?      @map("deleted_at") @db.Timestamp(0)
-  status     ScheduledPostStatus? 
+  status     ScheduledPostStatus?  @default(DIRECT)
   sharedPostId BigInt?  @map("shared_post_id") @db.UnsignedBigInt
   sharedPost   Post?    @relation("PostShares", fields: [sharedPostId], references: [id])
   shares       Post[]   @relation("PostShares")
@@ -241,12 +260,18 @@ model Post {
   media          PostMedia[]
   allowedUsers   PostAllowedUser[]
   edits          PostEdit[]
+  groupId BigInt? @map("group_id") @db.UnsignedBigInt
+  group   Group?  @relation(fields: [groupId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  // Also add this to your @@index list at the bottom of the Post model:
+  @@index([groupId])
   comments       Comment[]
   savedBy        SavedPost[]
   hashtags       PostHashtag[]
   interactions   UserInteraction[]
   trendingScores TrendingScore[]
   categoryMap    PostCategoryMap[]
+  
   feedCache      UserFeedCache[]
 
   @@index([userId])
@@ -644,4 +669,45 @@ model UserFeedCache {
   @@index([userId, score])
   @@index([userId, createdAt])
   @@map("user_feed_cache")
+}
+model Group {
+  id            BigInt       @id @default(autoincrement()) @db.UnsignedBigInt
+  name          String       @db.VarChar(255)
+  description   String?      @db.Text
+  privacy       GroupPrivacy @default(PUBLIC)
+  avatarMediaId BigInt?      @map("avatar_media_id") @db.UnsignedBigInt
+  coverMediaId  BigInt?      @map("cover_media_id") @db.UnsignedBigInt
+  creatorId     BigInt       @map("creator_id") @db.UnsignedBigInt
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamp(0)
+  updatedAt     DateTime     @updatedAt @map("updated_at") @db.Timestamp(0)
+  deletedAt     DateTime?    @map("deleted_at") @db.Timestamp(0)
+  postsNeedApproval Boolean @default(false) @map("posts_need_approval")
+
+  // Relations
+  creator     User          @relation("GroupCreator", fields: [creatorId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  avatarMedia Media?        @relation("GroupAvatarMedia", fields: [avatarMediaId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  coverMedia  Media?        @relation("GroupCoverMedia", fields: [coverMediaId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  members     GroupMember[]
+  posts       Post[]
+
+  @@index([creatorId])
+  @@map("groups")
+}
+
+model GroupMember {
+  id        BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
+  groupId   BigInt            @map("group_id") @db.UnsignedBigInt
+  userId    BigInt            @map("user_id") @db.UnsignedBigInt
+  role      GroupMemberRole   @default(MEMBER)
+  status    GroupMemberStatus @default(APPROVED)
+  joinedAt  DateTime          @default(now()) @map("joined_at") @db.Timestamp(0)
+
+  // Relations
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([groupId, userId])
+  @@index([userId])
+  @@index([groupId, status])
+  @@map("group_members")
 }

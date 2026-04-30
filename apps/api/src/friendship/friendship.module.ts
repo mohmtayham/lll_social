@@ -3,9 +3,21 @@ import { FriendshipService } from './friendship.service';
 import { FriendshipController } from './friendship.controller';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { NotificationModule } from 'src/notification/notification.module';
+import { BullModule } from '@nestjs/bullmq';
 
 @Module({
-  imports: [NotificationModule],
+  imports: [
+    NotificationModule,
+    BullModule.registerQueue({
+      name: 'graph-sync',
+      defaultJobOptions: {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 1000 },
+        removeOnComplete: true,
+        removeOnFail: false,
+      },
+    }),
+  ],
   controllers: [FriendshipController],
   providers: [FriendshipService, PrismaService],
 })

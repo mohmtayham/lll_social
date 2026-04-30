@@ -1,16 +1,36 @@
 import { Injectable } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateUserInteractionDto } from './dto/create-user-interaction.dto';
 import { UpdateUserInteractionDto } from './dto/update-user-interaction.dto';
 
 @Injectable()
 export class UserInteractionService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @InjectQueue('graph-sync') private readonly graphQueue: Queue,
+  ) {}
 
-  create(createUserInteractionDto: CreateUserInteractionDto) {
-    return this.prisma.userInteraction.create({
+  async create(createUserInteractionDto: CreateUserInteractionDto) {
+    const interaction = await this.prisma.userInteraction.create({
       data: createUserInteractionDto as any,
     });
+
+    await this.graphQueue.add('sync-interaction', {
+      userId: String(interaction.userId),
+      postId: String(interaction.postId),
+      interactionType: interaction.interactionType,
+      watchTime: interaction.watchTime ?? undefined,
+      updatedAt: interaction.createdAt.toISOString(),
+    }, {
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 1000 },
+      removeOnComplete: true,
+      removeOnFail: false,
+    });
+
+    return interaction;
   }
 
   findAll() {

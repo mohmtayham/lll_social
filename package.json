@@ -4,7 +4,10 @@
   "packageManager": "pnpm@10.28.2",
   "scripts": {
     "build": "turbo run build",
-    "dev": "turbo run dev",
+    "dev": "pnpm -r --parallel --if-present dev",
+    "dev:turbo": "turbo run dev",
+    "dev:api": "pnpm --filter api dev",
+    "dev:web": "pnpm --filter web dev",
     "start": "turbo run start"
   },
   "devDependencies": {

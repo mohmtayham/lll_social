@@ -39,7 +39,7 @@ export class AuthService {
       id: createdUser.id.toString(),
       name: createdUser.name,
       email: createdUser.email,
-     country : createdUser.country,
+      country : createdUser.country,
       gender : createdUser.gender,
       city : createdUser.city,
       role: createdUser.role,

@@ -13,8 +13,29 @@ export class ScoreService {
   @Cron(CronExpression.EVERY_WEEK)
   async scheduleDecayJob() {
     this.logger.log('Cron triggered: Adding score decay job to Redis queue...');
-    
-    // إرسال المهمة إلى Redis (لا ننتظر انتهاءها هنا)
-    await this.scoreQueue.add('decay-scores-task', {});
+    await this.scoreQueue.add(
+      'decay-scores-task',
+      {},
+      {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 5000 },
+        removeOnComplete: true,
+        removeOnFail: false,
+      },
+    );
+  }
+
+  async enqueueDecayJob() {
+    this.logger.log('Manual trigger: Adding score decay job to Redis queue...');
+    return this.scoreQueue.add(
+      'decay-scores-task',
+      {},
+      {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 5000 },
+        removeOnComplete: true,
+        removeOnFail: false,
+      },
+    );
   }
 }
