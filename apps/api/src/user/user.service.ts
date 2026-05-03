@@ -1,3 +1,4 @@
+import { UpdateUserPrivacyDto } from './../user-privacy/dto/update-user-privacy.dto';
 import { Injectable } from '@nestjs/common';
 import { CreateUserDto } from './dto/create-user.dto';
 import { PrismaService } from 'src/prisma/prisma.service';
@@ -14,6 +15,8 @@ export class UserService {
     if (typeof userId === 'number') return BigInt(userId);
     return BigInt(userId);
   }
+
+  
 
   async create(createUserDto: CreateUserDto) {
     const { password, ...user } = createUserDto;

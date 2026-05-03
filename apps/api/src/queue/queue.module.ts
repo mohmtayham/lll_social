@@ -34,6 +34,15 @@ import { DlqProcessor } from './dlq.processor';
         },
       },
       {
+        name: 'engagement-score',
+        defaultJobOptions: {
+          attempts: 3,
+          backoff: { type: 'exponential', delay: 1000 },
+          removeOnComplete: true,
+          removeOnFail: false,
+        },
+      },
+      {
         name: 'dlq',
         defaultJobOptions: {
           removeOnComplete: true,

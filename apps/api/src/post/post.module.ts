@@ -5,9 +5,11 @@ import { PostService } from './post.service';
 
 import { PostSchedulingProcessor } from './post-scheduling.processor';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { ScoreModule } from 'src/score/score.module';
 
 @Module({
   imports: [
+    ScoreModule,
     BullModule.registerQueue({
       name: 'post-scheduling', // اسم الطابور
       defaultJobOptions: {

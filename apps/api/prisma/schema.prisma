@@ -176,6 +176,7 @@ model User {
   allowedPosts             PostAllowedUser[]
   groupsCreated    Group[]       @relation("GroupCreator")
   groupMemberships GroupMember[]
+  groupAffinities UserGroupAffinity[]
   comments                 Comment[]
   reactions                Reaction[]
   friendshipsInitiated     Friendship[]              @relation("FriendshipUser1")
@@ -255,7 +256,7 @@ model Post {
   sharedPostId BigInt?  @map("shared_post_id") @db.UnsignedBigInt
   sharedPost   Post?    @relation("PostShares", fields: [sharedPostId], references: [id])
   shares       Post[]   @relation("PostShares")
-
+  globalScore Float @default(0) @map("global_score")
   user           User              @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
   media          PostMedia[]
   allowedUsers   PostAllowedUser[]
@@ -616,7 +617,7 @@ model UserRelationshipScore {
   userId       BigInt @map("user_id") @db.UnsignedBigInt
   targetUserId BigInt @map("target_user_id") @db.UnsignedBigInt
   score        Float
-
+  updatedAt DateTime @updatedAt @default(now()) @map("updated_at") @db.Timestamp(0) // 
   user       User @relation("UserRelationshipScoreGiven", fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
   targetUser User @relation("UserRelationshipScoreTarget", fields: [targetUserId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
@@ -629,6 +630,7 @@ model UserInterest {
   userId   BigInt @map("user_id") @db.UnsignedBigInt
   interest String @db.VarChar(100)
   score    Float
+  updatedAt DateTime @updatedAt @default(now()) @map("updated_at") @db.Timestamp(0) // أضف هذا السطر
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
@@ -689,6 +691,7 @@ model Group {
   coverMedia  Media?        @relation("GroupCoverMedia", fields: [coverMediaId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   members     GroupMember[]
   posts       Post[]
+  groupAffinities   UserGroupAffinity[]
 
   @@index([creatorId])
   @@map("groups")
@@ -710,4 +713,18 @@ model GroupMember {
   @@index([userId])
   @@index([groupId, status])
   @@map("group_members")
+}
+model UserGroupAffinity {
+  userId    BigInt   @map("user_id") @db.UnsignedBigInt
+  groupId   BigInt   @map("group_id") @db.UnsignedBigInt
+  score     Float    @default(0)
+  // مهم جداً لحساب الـ Decay (خمود الاهتمام)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@id([userId, groupId])
+  @@index([userId, score]) // لتسريع جلب أكثر مجموعات يحبها المستخدم
+  @@map("user_group_affinities")
 }

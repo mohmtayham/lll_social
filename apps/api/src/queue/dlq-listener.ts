@@ -12,6 +12,7 @@ export class DlqListener implements OnModuleInit, OnModuleDestroy {
     @InjectQueue('graph-sync') private readonly graphQueue: Queue,
     @InjectQueue('post-scheduling') private readonly scheduleQueue: Queue,
     @InjectQueue('score-decay') private readonly scoreQueue: Queue,
+    @InjectQueue('engagement-score') private readonly engagementQueue: Queue,
     @InjectQueue('dlq') private readonly dlqQueue: Queue,
   ) {}
 
@@ -19,6 +20,7 @@ export class DlqListener implements OnModuleInit, OnModuleDestroy {
     this.attachDlqLogic(this.graphQueue);
     this.attachDlqLogic(this.scheduleQueue);
     this.attachDlqLogic(this.scoreQueue);
+    this.attachDlqLogic(this.engagementQueue);
   }
 
   async onModuleDestroy() {

@@ -45,12 +45,20 @@ import { ScoreModule } from './score/score.module';
 import { GraphSyncModule } from './graph-sync/graph-sync.module';
 import { Neo4jModule } from './neo4j/neo4j.module';
 import { QueueModule } from './queue/queue.module';
+
+import { GroupModule } from './group/group.module';
 @Module({
   imports: [
     ScheduleModule.forRoot(), // Add this line!
     BullModule.forRootAsync({
       useFactory: () => ({
         connection: {
+          type: 'cluster',
+          nodes: [
+        { host: '127.0.0.1', port: 7000 },
+        { host: '127.0.0.1', port: 7001 },
+        { host: '127.0.0.1', port: 7002 },
+      ],
           host: process.env.LOCAL_REDIS_HOST || '127.0.0.1',
           // Keep Redis local by default to avoid accidental Docker host values.
           port: parseInt(String(process.env.LOCAL_REDIS_PORT || 6379), 10),
@@ -58,7 +66,7 @@ import { QueueModule } from './queue/queue.module';
         },
       }),
     }),
-    RedisModule,
+   RedisModule,
     AuthModule,
     UserModule,
     BlockModule,
@@ -97,6 +105,7 @@ import { QueueModule } from './queue/queue.module';
     GraphSyncModule,
     Neo4jModule,
     QueueModule,
+    GroupModule,
 
   ],
   controllers: [AppController],

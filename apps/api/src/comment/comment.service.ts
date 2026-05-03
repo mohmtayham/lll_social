@@ -1,11 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { EngagementScoreService } from 'src/score/engagement-score.service';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { UpdateCommentDto } from './dto/update-comment.dto';
 
 @Injectable()
 export class CommentService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly engagementScoreService: EngagementScoreService,
+  ) {}
 
   private toBigInt(value: string | number | bigint): bigint {
     if (typeof value === 'bigint') return value;
@@ -13,8 +17,15 @@ export class CommentService {
     return BigInt(value);
   }
 
-  create(createCommentDto: CreateCommentDto) {
-    return this.prisma.comment.create({
+  private extractHashtags(content: string): string[] {
+    const matches = content.match(/#[\w\u0600-\u06FF]+/g);
+    if (!matches) return [];
+
+    return [...new Set(matches.map((tag) => tag.slice(1).toLowerCase()))];
+  }
+
+  async create(createCommentDto: CreateCommentDto) {
+    const comment = await this.prisma.comment.create({
       data: {
         postId: this.toBigInt(createCommentDto.postId),
         userId: this.toBigInt(createCommentDto.userId),
@@ -25,6 +36,22 @@ export class CommentService {
         isEdited: createCommentDto.isEdited ?? false,
       },
     });
+
+    const post = await this.prisma.post.findUnique({
+      where: { id: this.toBigInt(createCommentDto.postId) },
+      select: {
+        groupId: true,
+      },
+    });
+
+    await this.engagementScoreService.trackCommentCreated({
+      userId: comment.userId,
+      postId: comment.postId,
+      groupId: post?.groupId ?? null,
+      hashtags: this.extractHashtags(comment.content),
+    });
+
+    return comment;
   }
 
   findAll() {

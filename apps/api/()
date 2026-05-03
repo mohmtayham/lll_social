@@ -1,1 +1,2 @@
 //pnpm dev --b swc
+//"C:\redis\redis-cli.exe" --cluster create 127.0.0.1:7000 127.0.0.1:7001 127.0.0.1:7002 --cluster-replicas 0

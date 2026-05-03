@@ -3,6 +3,8 @@ import { BullModule } from '@nestjs/bullmq';
 import { ScoreService } from './score.service';
 import { ScoreController } from './score.controller';
 import { ScoreProcessor } from './score.processor';
+import { EngagementScoreService } from './engagement-score.service';
+import { EngagementScoreProcessor } from './engagement-score.processor';
 import { PrismaModule } from 'src/prisma/prisma.module';
 
 @Module({
@@ -16,9 +18,19 @@ import { PrismaModule } from 'src/prisma/prisma.module';
         removeOnFail: false,
       },
     }),
+    BullModule.registerQueue({
+      name: 'engagement-score',
+      defaultJobOptions: {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 1000 },
+        removeOnComplete: true,
+        removeOnFail: false,
+      },
+    }),
     PrismaModule,
   ],
   controllers: [ScoreController],
-  providers: [ScoreService, ScoreProcessor],
+  providers: [ScoreService, ScoreProcessor, EngagementScoreService, EngagementScoreProcessor],
+  exports: [EngagementScoreService],
 })
 export class ScoreModule {}

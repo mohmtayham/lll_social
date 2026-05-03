@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
-import Redis, { Redis as RedisClient } from 'ioredis';
+// import Redis, { Redis as RedisClient } from 'ioredis';
+import Redis, { Cluster, Redis as RedisClient } from 'ioredis';
 
 type SortedSetEntry = {
   member: string;
@@ -9,16 +10,25 @@ type SortedSetEntry = {
 @Injectable()
 export class RedisService implements OnModuleDestroy {
   private readonly logger = new Logger(RedisService.name);
-  private readonly client: RedisClient;
-
+  // private readonly client: RedisClient;
+private readonly client: Cluster | RedisClient;
   constructor() {
-    this.client = new Redis({
-      host: process.env.LOCAL_REDIS_HOST || '127.0.0.1',
-      port: parseInt(String(process.env.LOCAL_REDIS_PORT || 6379), 10),
-      password: process.env.LOCAL_REDIS_PASSWORD || undefined,
-      maxRetriesPerRequest: 3,
+  
+    // تحديث المحرك ليعمل بنظام Cluster
+    this.client = new Redis.Cluster([
+      { host: '127.0.0.1', port: 7000 },
+      { host: '127.0.0.1', port: 7001 },
+      { host: '127.0.0.1', port: 7002 },
+    ], {
       enableAutoPipelining: true,
-      retryStrategy: (times) => Math.min(times * 50, 2000),
+       scaleReads: 'slave', // اختياري: لتوزيع القراءة على العقد الأخرى
+          clusterRetryStrategy: (times) => Math.min(times * 50, 2000),
+    
+      redisOptions: {
+        password: process.env.LOCAL_REDIS_PASSWORD || undefined,
+      maxRetriesPerRequest: 3,
+    
+}, // لاحظ تغيير الاسم هنا للـ Cluster
     });
 
     this.client.on('error', (error) => {
@@ -30,7 +40,7 @@ export class RedisService implements OnModuleDestroy {
     });
   }
 
-  getClient(): RedisClient {
+  getClient(): RedisClient|Cluster {
     return this.client;
   }
 

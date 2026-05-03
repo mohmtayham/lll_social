@@ -4,6 +4,7 @@ import { Queue } from 'bullmq';
 import { PostVisibility, Prisma } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { RedisService } from 'src/redis/redis.service';
+import { EngagementScoreService } from 'src/score/engagement-score.service';
 import { Neo4jService } from '../neo4j/neo4j.service';
 import { CreatePostDto } from './dto/create-post.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
@@ -40,6 +41,7 @@ export class PostService {
     @InjectQueue('graph-sync') private readonly graphQueue: Queue,
     private readonly redisService: RedisService,
     private readonly neo4jService: Neo4jService,
+    private readonly engagementScoreService: EngagementScoreService,
   ) {}
 
   extractHashtags(content: string): string[] {
@@ -139,6 +141,11 @@ const stopWords = new Set([
     return this.stableNoise(key) * scale;
   }
 
+  private decayByAge(updatedAt: Date, halfLifeHours = 240): number {
+    const ageHours = Math.max(0, (Date.now() - updatedAt.getTime()) / (1000 * 60 * 60));
+    return Math.exp(-ageHours / halfLifeHours);
+  }
+
   private async getFeedVisibilityContext(userId: bigint): Promise<FeedVisibilityContext> {
     const [friendRows, blockRows] = await Promise.all([
       this.prisma.friendship.findMany({
@@ -203,14 +210,43 @@ const stopWords = new Set([
     }
 
     return {
-      OR: visibilityOr,
-      ...(context.blockedIds.length
-        ? {
-            userId: {
-              notIn: context.blockedIds,
+      AND: [
+        {
+          OR: visibilityOr,
+          ...(context.blockedIds.length
+            ? {
+                userId: {
+                  notIn: context.blockedIds,
+                },
+              }
+            : {}),
+        },
+        {
+          OR: [
+            { groupId: null },
+            {
+              group: {
+                privacy: 'PUBLIC',
+              },
             },
-          }
-        : {}),
+            {
+              group: {
+                creatorId: context.userId,
+              },
+            },
+            {
+              group: {
+                members: {
+                  some: {
+                    userId: context.userId,
+                    status: 'APPROVED',
+                  },
+                },
+              },
+            },
+          ],
+        },
+      ],
     };
   }
 
@@ -237,6 +273,155 @@ const stopWords = new Set([
       score: existing.score + score,
       source: combinedSource,
     });
+  }
+
+  private buildFeedMix(pageSize: number, maturity: number) {
+    const warmMix = {
+      interest: Math.round(pageSize * 0.3),
+      group: Math.round(pageSize * 0.4),
+      social: Math.round(pageSize * 0.1),
+      exploration: Math.round(pageSize * 0.2),
+    };
+
+    const coldMix = {
+      interest: Math.max(2, Math.round(pageSize * 0.2)),
+      group: 0,
+      social: 0,
+      exploration: Math.max(0, pageSize - Math.max(2, Math.round(pageSize * 0.2))),
+    };
+
+    const mix = {
+      interest: Math.round(coldMix.interest + (warmMix.interest - coldMix.interest) * maturity),
+      group: Math.round(coldMix.group + (warmMix.group - coldMix.group) * maturity),
+      social: Math.round(coldMix.social + (warmMix.social - coldMix.social) * maturity),
+      exploration: Math.round(coldMix.exploration + (warmMix.exploration - coldMix.exploration) * maturity),
+    };
+
+    const total = mix.interest + mix.group + mix.social + mix.exploration;
+    if (total === pageSize) return mix;
+
+    mix.exploration = Math.max(0, mix.exploration + (pageSize - total));
+    return mix;
+  }
+
+  private async getUserMaturityFactor(userId: bigint): Promise<number> {
+    const [interestSummary, groupSummary] = await Promise.all([
+      this.prisma.userInterest.aggregate({
+        where: { userId },
+        _sum: { score: true },
+      }),
+      this.prisma.userGroupAffinity.aggregate({
+        where: { userId },
+        _sum: { score: true },
+      }),
+    ]);
+
+    const totalScores = (interestSummary._sum.score ?? 0) + (groupSummary._sum.score ?? 0);
+    return Math.max(0, Math.min(totalScores / 500, 1));
+  }
+
+  private async readGroupPosts(userId: bigint, limit: number): Promise<ScoredPost[]> {
+    const groupAffinities = await this.prisma.userGroupAffinity.findMany({
+      where: {
+        userId,
+        score: {
+          gt: 0,
+        },
+      },
+      orderBy: [
+        { score: 'desc' },
+        { updatedAt: 'desc' },
+      ],
+      take: 20,
+      select: {
+        groupId: true,
+        score: true,
+        updatedAt: true,
+      },
+    });
+
+    if (!groupAffinities.length) return [];
+
+    const groupIds = groupAffinities.map((item) => item.groupId);
+    const affinityByGroup = new Map(
+      groupAffinities.map((item) => [item.groupId.toString(), item.score * this.decayByAge(item.updatedAt)]),
+    );
+
+    const posts = await this.prisma.post.findMany({
+      where: {
+        groupId: {
+          in: groupIds,
+        },
+        status: { in: ['PUBLISHED', 'DIRECT'] },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(limit * 3, 250),
+      select: {
+        id: true,
+        groupId: true,
+        createdAt: true,
+        viewsCount: true,
+      },
+    });
+
+    return posts
+      .map((post) => {
+        const groupId = post.groupId?.toString();
+        if (!groupId) return null;
+
+        const affinityScore = affinityByGroup.get(groupId) ?? 0;
+        const hoursSincePublished = Math.max(0, (Date.now() - post.createdAt.getTime()) / (1000 * 60 * 60));
+        const recencyScore = hoursSincePublished === 0 ? 1 : 1 / Math.log10(hoursSincePublished + 10);
+        const interactionScore = Math.log10((post.viewsCount || 0) + 10) * 0.35;
+
+        return {
+          postId: post.id,
+          score: affinityScore * 0.7 + recencyScore * 0.2 + interactionScore * 0.1,
+        };
+      })
+      .filter((item): item is ScoredPost => Boolean(item))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit);
+  }
+
+  private async readGlobalTrends(limit: number): Promise<ScoredPost[]> {
+    const [trending, newest] = await Promise.all([
+      this.prisma.trendingScore.findMany({
+        orderBy: { score: 'desc' },
+        take: limit,
+        select: {
+          postId: true,
+          score: true,
+        },
+      }),
+      this.prisma.post.findMany({
+        where: { status: { in: ['PUBLISHED', 'DIRECT'] } },
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        select: {
+          id: true,
+        },
+      }),
+    ]);
+
+    const scored = new Map<string, number>();
+
+    for (const item of trending) {
+      scored.set(item.postId.toString(), (scored.get(item.postId.toString()) ?? 0) + item.score);
+    }
+
+    newest.forEach((post, index) => {
+      const bonus = Math.max(0.2, 1.4 - index * 0.02);
+      scored.set(post.id.toString(), (scored.get(post.id.toString()) ?? 0) + bonus);
+    });
+
+    return [...scored.entries()]
+      .map(([postId, score]) => ({
+        postId: this.toBigInt(postId),
+        score,
+      }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit);
   }
 
   private async getSqlFeedCache(
@@ -354,9 +539,9 @@ const stopWords = new Set([
   private async readGraphFriendPosts(userId: bigint, limit: number): Promise<ScoredPost[]> {
     const rows = await this.neo4jService.read<Record<string, any>>(
       `
-      MATCH path = (me:User {id: $userId})-[:FRIENDS_WITH*1..2]-(friend:User)-[:POSTED]->(post:Post)
-      WITH post, min(length(path)) AS distance
-      RETURN toString(post.id) AS postId, (4.0 - toFloat(distance)) AS score
+      MATCH (me:User {id: $userId})-[:FRIENDS_WITH]-(friend:User)-[:POSTED]->(post:Post)
+      WHERE friend.id <> $userId
+      RETURN toString(post.id) AS postId, 3.0 AS score
       ORDER BY score DESC
       LIMIT toInteger($limit)
       `,
@@ -735,6 +920,12 @@ const stopWords = new Set([
       ),
     ]);
 
+    await this.engagementScoreService.trackPostCreated({
+      userId: post.userId,
+      postId: post.id,
+      hashtags,
+    });
+
     return post;
   }
 
@@ -775,20 +966,16 @@ const stopWords = new Set([
     }
 
     const candidatePool = Math.max(normalizedPageSize * 8, 80);
-    const sourceLabels = [
-      'graph-friends',
-      'graph-friends-seen',
-      'interest',
-      'popular',
-      'newest',
-    ] as const;
+    const maturity = await this.getUserMaturityFactor(userIdBigInt);
+    const mix = this.buildFeedMix(normalizedPageSize, maturity);
+
+    const sourceLabels = ['social', 'interest', 'group', 'exploration'] as const;
 
     const results = await Promise.allSettled([
       this.readGraphFriendPosts(userIdBigInt, candidatePool),
-      this.readGraphFriendSeenPosts(userIdBigInt, candidatePool),
       this.readInterestPosts(userIdBigInt, candidatePool),
-      this.readPopularPosts(candidatePool),
-      this.readNewestPosts(candidatePool),
+      this.readGroupPosts(userIdBigInt, candidatePool),
+      this.readGlobalTrends(candidatePool),
     ]);
 
     const extract = (index: number): ScoredPost[] => {
@@ -802,57 +989,37 @@ const stopWords = new Set([
       return [];
     };
 
-    const friendPosts = extract(0);
-    const friendSeenPosts = extract(1);
-    const interestPosts = extract(2);
-    const popularPosts = extract(3);
-    const newestPosts = extract(4);
+    const socialPosts = extract(0);
+    const interestPosts = extract(1);
+    const groupPosts = extract(2);
+    const globalPosts = extract(3);
 
     const candidateMap = new Map<string, FeedCandidate>();
+    const addSourceItems = (items: ScoredPost[], source: string, bonus: number, jitterSalt: string) => {
+      for (const item of items) {
+        this.upsertCandidate(
+          candidateMap,
+          item.postId,
+          item.score + bonus + this.scoreJitter(userIdBigInt, item.postId, jitterSalt, bonus * 0.35),
+          source,
+        );
+      }
+    };
 
-    for (const item of friendPosts) {
-      this.upsertCandidate(
-        candidateMap,
-        item.postId,
-        item.score + this.scoreJitter(userIdBigInt, item.postId, 'friends-of-friends', 0.7),
-        'friends-of-friends',
-      );
-    }
+    addSourceItems(socialPosts.slice(0, mix.social), 'social', 1.4, 'social');
+    addSourceItems(interestPosts.slice(0, mix.interest), 'interest', 1.8, 'interest');
+    addSourceItems(groupPosts.slice(0, mix.group), 'group', 2.2, 'group');
+    addSourceItems(globalPosts.slice(0, mix.exploration), 'exploration', 1.1, 'exploration');
 
-    for (const item of friendSeenPosts) {
-      this.upsertCandidate(
-        candidateMap,
-        item.postId,
-        item.score + this.scoreJitter(userIdBigInt, item.postId, 'friends-seen', 0.6),
-        'friends-seen',
-      );
-    }
-
-    for (const item of interestPosts) {
-      this.upsertCandidate(
-        candidateMap,
-        item.postId,
-        item.score + this.scoreJitter(userIdBigInt, item.postId, 'interest', 0.6),
-        'interest',
-      );
-    }
-
-    for (const item of popularPosts) {
-      this.upsertCandidate(
-        candidateMap,
-        item.postId,
-        item.score + 1.8 + this.scoreJitter(userIdBigInt, item.postId, 'popular', 0.8),
-        'popular',
-      );
-    }
-
-    for (const item of newestPosts) {
-      this.upsertCandidate(
-        candidateMap,
-        item.postId,
-        item.score + 1.2 + this.scoreJitter(userIdBigInt, item.postId, 'newest', 0.8),
-        'newest',
-      );
+    if (!candidateMap.size) {
+      for (const item of globalPosts) {
+        this.upsertCandidate(
+          candidateMap,
+          item.postId,
+          item.score + this.scoreJitter(userIdBigInt, item.postId, 'fallback', 0.5),
+          'exploration-fallback',
+        );
+      }
     }
 
     let ranked = [...candidateMap.values()]
@@ -863,10 +1030,10 @@ const stopWords = new Set([
       .sort((a, b) => b.score - a.score);
 
     if (!ranked.length) {
-      ranked = newestPosts.map((item) => ({
+      ranked = globalPosts.map((item) => ({
         postId: item.postId,
         score: item.score,
-        source: 'newest-fallback',
+        source: 'exploration-fallback',
       }));
     }
 
@@ -991,6 +1158,12 @@ const stopWords = new Set([
       ),
     ]);
 
+    await this.engagementScoreService.trackPostCreated({
+      userId: post.userId,
+      postId: post.id,
+      hashtags: this.extractHashtags(post.content || ''),
+    });
+
     return post;
   }
 
@@ -1049,76 +1222,286 @@ const stopWords = new Set([
     return post;
   }
   async savePost(postId: bigint, userId: bigint) {
-  // 1. جلب البيانات الأساسية
-  const post = await this.prisma.post.findUnique({
-    where: { id: postId },
-    select: { 
-      id: true,
-      content: true,
-      categoryId: true,
-      hashtags: { select: { hashtag: { select: { name: true } } } }
-    },
-  });
+    const post = await this.prisma.post.findUnique({
+      where: { id: postId },
+      select: {
+        id: true,
+        content: true,
+        status: true,
+        hashtags: {
+          select: {
+            hashtag: {
+              select: { name: true },
+            },
+          },
+        },
+        categoryMap: {
+          select: {
+            category: {
+              select: { name: true },
+            },
+          },
+        },
+      },
+    });
 
-  if (!post) throw new NotFoundException('Post not found');
+    if (!post) throw new NotFoundException('Post not found');
 
-  // 2. [هام] التحقق أولاً قبل أي عملية إنشاء
-  const alreadySaved = await this.prisma.savedPost.findUnique({
-    where: {
-      userId_postId: { userId, postId } // تأكد أن لديك Unique Index بهذا الاسم في Prisma
-    },
-  });
+    const alreadySaved = await this.prisma.savedPost.findUnique({
+      where: {
+        userId_postId: { userId, postId },
+      },
+    });
 
-  if (alreadySaved) {
-    throw new ConflictException('Post already saved');
-  }
+    if (alreadySaved) {
+      throw new ConflictException('Post already saved');
+    }
 
-  // 3. إنشاء سجل الحفظ
-  const savedPost = await this.prisma.savedPost.create({
-    data: { postId, userId },
-  });
+    const savedPost = await this.prisma.savedPost.create({
+      data: { postId, userId },
+    });
 
-  // 4. تجميع الإشارات (Signals) لتحديث الاهتمامات
-  const interestsToUpdate: string[] = [];
-  if (post.categoryId) interestsToUpdate.push(`category_${post.categoryId}`);
-  // الحل: أضف شرطاً للتأكد أن الاسم موجود
-post.hashtags.forEach(h => {
-  if (h.hashtag.name) interestsToUpdate.push(h.hashtag.name);
-});
-  post.hashtags.forEach(h => {
-    if (h.hashtag.name) interestsToUpdate.push(h.hashtag.name);
-  });
+    const interestsToUpdate: string[] = [];
+    for (const item of post.hashtags) {
+      if (item.hashtag.name) interestsToUpdate.push(item.hashtag.name);
+    }
+    for (const item of post.categoryMap) {
+      interestsToUpdate.push(`category_${item.category.name}`);
+    }
 
-  // 5. [تحسين الأداء] تحديث الاهتمامات بالتوازي أو عبر العامل الخلفي
-  // بدلاً من await داخل for، نستخدم Promise.all لتنفيذهم معاً
-  if (interestsToUpdate.length > 0) {
-    await Promise.all(
-      interestsToUpdate.map(name => 
-        this.prisma.userInterest.upsert({
-          where: { userId_interest: { userId, interest: name } },
-          update: { score: { increment: 5.0 } },
-          create: { userId, interest: name, score: 5.0 }
-        })
-      )
+    if (interestsToUpdate.length > 0) {
+      await Promise.all(
+        interestsToUpdate.map((name) =>
+          this.prisma.userInterest.upsert({
+            where: { userId_interest: { userId, interest: name } },
+            update: { score: { increment: 50.0 } },
+            create: { userId, interest: name, score: 50.0 },
+          }),
+        ),
+      );
+    }
+
+    await this.invalidateUserFeedCache(userId);
+
+    this.graphQueue.add(
+      'sync-saved-post',
+      {
+        postId: postId.toString(),
+        userId: userId.toString(),
+        content: post.content,
+        interests: interestsToUpdate,
+      },
+      this.queueOptions(),
     );
+
+    return savedPost;
   }
 
-  // 6. العمليات الخلفية (خارج الحلقة تماماً)
-  await this.invalidateUserFeedCache(userId);
+  async postInGroup(userId: number, groupId: string, content: string) {
+    const userBigInt = this.toBigInt(userId);
+    const groupBigInt = this.toBigInt(groupId);
+    const group = await this.prisma.group.findFirst({
+      where: { id: groupBigInt, deletedAt: null },
+      select: {
+        id: true,
+        postsNeedApproval: true,
+        creatorId: true,
+        members: {
+          where: { userId: userBigInt, status: 'APPROVED' },
+          select: { role: true },
+          take: 1,
+        },
+      },
+    });
 
-  this.graphQueue.add(
-    'sync-saved-post',
-    {
-      postId: postId.toString(),
-      userId: userId.toString(),
-      // نرسل المحتوى هنا ليقوم الـ Worker بتحليله (NLP) بدلاً من تعطيل المستخدم
-      content: post.content, 
-      interests: interestsToUpdate
-    },
-    this.queueOptions()
-  );
+    if (!group) {
+      throw new NotFoundException('Group not found');
+    }
 
-  return savedPost;
-}
+    const isCreator = group.creatorId === userBigInt;
+    const isMember = group.members.length > 0;
+    if (!isCreator && !isMember) {
+      throw new ConflictException('You must join the group before posting');
+    }
 
+    const hashtags = this.extractHashtags(content || '');
+    const status = group.postsNeedApproval ? 'PENDING' : 'DIRECT';
+    const post = await this.prisma.post.create({
+      data: {
+        userId: userBigInt,
+        groupId: group.id,
+        content,
+        visibility: PostVisibility.PUBLIC,
+        status,
+      },
+    });
+
+    await Promise.all([
+      this.invalidateUserFeedCache(post.userId),
+      this.graphQueue.add(
+        'sync-post',
+        {
+          postId: post.id.toString(),
+          authorId: post.userId.toString(),
+          hashtags,
+          status: String(post.status || 'DIRECT'),
+          createdAt: post.createdAt.toISOString(),
+          viewsCount: post.viewsCount,
+        },
+        this.queueOptions(),
+      ),
+    ]);
+
+    await this.engagementScoreService.trackPostCreated({
+      userId: post.userId,
+      postId: post.id,
+      groupId: post.groupId,
+      hashtags,
+    });
+
+    return post;
+  }
+  async approvePostInGroup(adminId: number, postId: string) {
+    const adminBigInt = this.toBigInt(adminId);
+    const targetPost = await this.prisma.post.findUnique({
+      where: { id: this.toBigInt(postId) },
+      select: {
+        id: true,
+        groupId: true,
+      },
+    });
+
+    if (!targetPost || !targetPost.groupId) {
+      throw new NotFoundException('Post not found');
+    }
+
+    await this.ensureGroupAdmin(adminBigInt, targetPost.groupId);
+
+    return this.prisma.post.update({
+      where: { id: targetPost.id },
+      data: { status: 'PUBLISHED' as any },
+    });
+  }
+
+  async approveMemberInGroup(adminId: number, groupId: string, memberId: number) {
+    await this.ensureGroupAdmin(this.toBigInt(adminId), this.toBigInt(groupId));
+
+    return this.prisma.groupMember.update({
+      where: {
+        groupId_userId: {
+          groupId: this.toBigInt(groupId),
+          userId: this.toBigInt(memberId),
+        },
+      },
+      data: { status: 'APPROVED' as any },
+    });
+  }
+
+  async removeMemberFromGroup(adminId: number, groupId: string, memberId: number) {
+    await this.ensureGroupAdmin(this.toBigInt(adminId), this.toBigInt(groupId));
+
+    return this.prisma.groupMember.deleteMany({
+      where: {
+        groupId: this.toBigInt(groupId),
+        userId: this.toBigInt(memberId),
+      },
+    });
+  }
+
+  async rejectPostInGroup(adminId: number, postId: string) {
+    const adminBigInt = this.toBigInt(adminId);
+    const targetPost = await this.prisma.post.findUnique({
+      where: { id: this.toBigInt(postId) },
+      select: {
+        id: true,
+        groupId: true,
+      },
+    });
+
+    if (!targetPost || !targetPost.groupId) {
+      throw new NotFoundException('Post not found');
+    }
+
+    await this.ensureGroupAdmin(adminBigInt, targetPost.groupId);
+
+    return this.prisma.post.update({
+      where: { id: targetPost.id },
+      data: { status: 'CANCELLED' as any },
+    });
+  }
+
+  async leaveGroup(userId: number, groupId: string) {
+    await this.prisma.groupMember.deleteMany({
+      where: {
+        groupId: this.toBigInt(groupId),
+        userId: this.toBigInt(userId),
+      },
+    });
+
+    await this.engagementScoreService.trackGroupLeave({
+      userId,
+      groupId,
+    });
+
+    return { message: 'Left group successfully' };
+  }
+
+  async hidePost(userId: number, postId: string) {
+    return this.prisma.post.update({
+      where: { id: this.toBigInt(postId) },
+      data: { deletedAt: new Date() },
+    });
+  }
+
+  async deleteGroup(adminId: number, groupId: string) {
+    await this.ensureGroupAdmin(this.toBigInt(adminId), this.toBigInt(groupId));
+
+    return this.prisma.group.update({
+      where: { id: this.toBigInt(groupId) },
+      data: { deletedAt: new Date() },
+    });
+  }
+
+  async updateGroupPrivacy(adminId: number, groupId: string, privacy: 'PUBLIC' | 'PRIVATE') {
+    await this.ensureGroupAdmin(this.toBigInt(adminId), this.toBigInt(groupId));
+
+    return this.prisma.group.update({
+      where: { id: this.toBigInt(groupId) },
+      data: { privacy: privacy as any },
+    });
+  }
+
+  async updatePostPrivacy() {
+    return { ok: true };
+  }
+
+  private async ensureGroupAdmin(adminId: bigint, groupId: bigint) {
+    const membership = await this.prisma.groupMember.findUnique({
+      where: {
+        groupId_userId: {
+          groupId,
+          userId: adminId,
+        },
+      },
+      select: {
+        role: true,
+        status: true,
+      },
+    });
+
+    if (membership?.status === 'APPROVED' && (membership.role === 'ADMIN' || membership.role === 'MODERATOR')) {
+      return;
+    }
+
+    const group = await this.prisma.group.findUnique({
+      where: { id: groupId },
+      select: { creatorId: true },
+    });
+
+    if (group?.creatorId === adminId) {
+      return;
+    }
+
+    throw new ConflictException('Admin access required');
+  }
 }
