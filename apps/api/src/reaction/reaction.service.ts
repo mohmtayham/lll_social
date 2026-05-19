@@ -17,8 +17,8 @@ export class ReactionService {
     return BigInt(value);
   }
 
-  create(createReactionDto: CreateReactionDto) {
-    return this.toggleReaction(createReactionDto.userId, createReactionDto);
+  create(createReactionDto: CreateReactionDto,userId:number | string | bigint) {
+    return this.toggleReaction(userId, createReactionDto);
   }
 
   private async resolveEngagementContext(reactableId: bigint, reactableType: CreateReactionDto['reactableType']) {
@@ -60,44 +60,46 @@ export class ReactionService {
     return this.prisma.reaction.findMany();
   }
 
-  findOne(id: string) {
-    return this.prisma.reaction.findUnique({
-      where: { id: this.toBigInt(id) },
+  findOne(userId:number | string | bigint) {
+    return this.prisma.reaction.findMany({
+      where:
+       { userId: this.toBigInt(userId) },
     });
+
   }
 
-  async update(id: string, updateReactionDto: UpdateReactionDto) {
-    const data: {
-      userId?: bigint;
-      reactableId?: bigint;
-      reactableType?: UpdateReactionDto['reactableType'];
-      reactionType?: UpdateReactionDto['reactionType'];
-    } = {};
+  // async update(id: string, updateReactionDto: UpdateReactionDto) {
+  //   const data: {
+  //     userId?: bigint;
+  //     reactableId?: bigint;
+  //     reactableType?: UpdateReactionDto['reactableType'];
+  //     reactionType?: UpdateReactionDto['reactionType'];
+  //   } = {};
 
-    if (updateReactionDto.userId) {
-      data.userId = this.toBigInt(updateReactionDto.userId);
-    }
-    if (updateReactionDto.reactableId) {
-      data.reactableId = this.toBigInt(updateReactionDto.reactableId);
-    }
-    if (updateReactionDto.reactableType !== undefined) {
-      data.reactableType = updateReactionDto.reactableType;
-    }
-    if (updateReactionDto.reactionType !== undefined) {
-      data.reactionType = updateReactionDto.reactionType;
-    }
+  //   if (updateReactionDto.userId) {
+  //     data.userId = this.toBigInt(updateReactionDto.userId);
+  //   }
+  //   if (updateReactionDto.reactableId) {
+  //     data.reactableId = this.toBigInt(updateReactionDto.reactableId);
+  //   }
+  //   if (updateReactionDto.reactableType !== undefined) {
+  //     data.reactableType = updateReactionDto.reactableType;
+  //   }
+  //   if (updateReactionDto.reactionType !== undefined) {
+  //     data.reactionType = updateReactionDto.reactionType;
+  //   }
 
-    return this.prisma.reaction.update({
-      where: { id: this.toBigInt(id) },
-      data,
-    });
-  }
+  //   return this.prisma.reaction.update({
+  //     where: { id: this.toBigInt(id) },
+  //     data,
+  //   });
+  // }
 
-  remove(id: string) {
-    return this.prisma.reaction.delete({
-      where: { id: this.toBigInt(id) },
-    });
-  }
+  // // remove(id: string) {
+  // //   return this.prisma.reaction.delete({
+  //     where: { id: this.toBigInt(id) },
+  //   });
+  // }
 
 
   async toggleReaction(userId: string | number | bigint, createDto: CreateReactionDto) {

@@ -23,12 +23,20 @@ export class BlockService {
     );
   }
 
-  async create(createBlockDto: CreateBlockDto) {
-    return this.toggleBlock(createBlockDto);
+  async create(createBlockDto: CreateBlockDto, userId: number | string | bigint) {
+    return this.toggleBlock(createBlockDto, userId);
   }
 
-  findAll() {
-    return this.prisma.block.findMany();
+  findAll(userId: number|string|bigint) {
+    return this.prisma.block.findMany({
+      where: {
+        OR: [
+          { blockerId: this.toBigInt(userId) },
+          { blockedId: this.toBigInt(userId) },
+        ],
+      },
+    }); 
+
   }
 
   findOne(id: string) {
@@ -37,19 +45,6 @@ export class BlockService {
     });
   }
 
-  update(id: string, updateBlockDto: UpdateBlockDto) {
-    return this.prisma.block.update({
-      where: { id: this.toBigInt(id) },
-      data: {
-        ...(updateBlockDto.blockerId
-          ? { blockerId: this.toBigInt(updateBlockDto.blockerId) }
-          : {}),
-        ...(updateBlockDto.blockedId
-          ? { blockedId: this.toBigInt(updateBlockDto.blockedId) }
-          : {}),
-      },
-    });
-  }
 
   remove(id: string) {
     return this.prisma.block.delete({
@@ -57,10 +52,10 @@ export class BlockService {
     });
   }
 
-  async toggleBlock(createBlockDto: CreateBlockDto) {
+  async toggleBlock(createBlockDto: CreateBlockDto, userId: number | string | bigint) {
     const exsitingBlock = await this.prisma.block.findFirst({
       where: {
-        blockerId: this.toBigInt(createBlockDto.blockerId),
+        blockerId: this.toBigInt(userId),
         blockedId: this.toBigInt(createBlockDto.blockedId),
       },
     });
@@ -72,19 +67,19 @@ export class BlockService {
         },
       });
 
-      await this.invalidateVisibilityCache(createBlockDto.blockerId, createBlockDto.blockedId);
+      await this.invalidateVisibilityCache(userId, createBlockDto.blockedId);
 
       return deleted;
     }
 
     const created = await this.prisma.block.create({
       data: {
-        blockerId: this.toBigInt(createBlockDto.blockerId),
+        blockerId: this.toBigInt(userId),
         blockedId: this.toBigInt(createBlockDto.blockedId),
       },
     });
 
-    await this.invalidateVisibilityCache(createBlockDto.blockerId, createBlockDto.blockedId);
+    await this.invalidateVisibilityCache(userId, createBlockDto.blockedId);
 
     return created;
   }

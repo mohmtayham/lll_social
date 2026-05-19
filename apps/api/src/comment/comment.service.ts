@@ -81,8 +81,21 @@ export class CommentService {
     return comment;
   }
 
-  findAll() {
-    return this.prisma.comment.findMany();
+  findAll(userId: number|string|bigint) {
+
+    const currentUserId = this.toBigInt(userId);
+    const comments = this.prisma.comment.findMany({
+      where: {
+        post: {
+          deletedAt: null,
+          OR: [
+            { groupId: null },
+            { group: { members: { some: { userId: currentUserId } } } }
+          ]
+        }
+      }
+    });
+    return comments;
   }
 
   findOne(id: string) {

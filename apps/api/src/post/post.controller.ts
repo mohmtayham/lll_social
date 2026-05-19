@@ -136,6 +136,15 @@ export class PostController {
   savePost(@Req() req, @Param('postId') postId: string) {
     return this.postService.savePost(BigInt(postId), req.user.id);
   }
+  //here we hide the post
+  @Post('hide/:postId')
+  hidePost(@Req() req, @Param('postId') postId: string) {
+    return this.postService.hidePostForUser(req.user.id, BigInt(postId));
+  }
+
+
+
+
     // ─────────────────────────────────────────
   // PATCH /post/:id — تعديل بوست
   // ─────────────────────────────────────────

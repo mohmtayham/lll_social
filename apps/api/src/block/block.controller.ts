@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Req } from '@nestjs/common';
 import { BlockService } from './block.service';
 import { CreateBlockDto } from './dto/create-block.dto';
 import { UpdateBlockDto } from './dto/update-block.dto';
@@ -8,22 +8,17 @@ export class BlockController {
   constructor(private readonly blockService: BlockService) {}
 
   @Post()
-  create(@Body() createBlockDto: CreateBlockDto) {
-    return this.blockService.create(createBlockDto);
+  create(@Req() req, @Body() createBlockDto: CreateBlockDto) {
+    return this.blockService.create(createBlockDto, req.user.id);
   }
 
   @Get()
-  findAll() {
-    return this.blockService.findAll();
+  findAll(@Req() req) {
+    return this.blockService.findAll(req.user.id);
   }
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.blockService.findOne(id);
-  }
-
-  @Patch(':id')
-  update(@Param('id') id: string, @Body() updateBlockDto: UpdateBlockDto) {
-    return this.blockService.update(id, updateBlockDto);
   }
 
   @Delete(':id')
