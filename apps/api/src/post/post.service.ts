@@ -1491,6 +1491,7 @@ async getFeedForUser(userId: string | number | bigint, page = 1, pageSize = 20) 
     });
   }
 
+
   async update(id: string, updatePostDto: UpdatePostDto, userId: bigint) {
     userId = this.toBigInt(userId);
       const user= await this.prisma.user.findUnique({
@@ -1913,8 +1914,24 @@ async hidePostForUser(userId: bigint, postId: bigint) {
     });
   }
 
-  async updatePostPrivacy() {
-    return { ok: true };
+  async updatePostPrivacy(userId: string | number | bigint, postId: string, visibility: PostVisibility) {
+    const userBigInt = this.toBigInt(userId);
+    const postBigInt = this.toBigInt(postId);
+
+      const post = await this.prisma.post.findUnique({
+      where: { id: postBigInt },
+      select: { id: true, userId: true },
+    });
+    if (!post) throw new NotFoundException('Post not found');
+    const isOwner = post.userId === userBigInt;
+    if (!isOwner) {
+      throw new NotFoundException('You do not have permission to change this post');
+    }
+    return this.prisma.post.update({
+      where: { id: postBigInt },
+      data: { visibility: visibility },
+  
+    });
   }
 
   private async ensureGroupAdmin(adminId: bigint, groupId: bigint) {
@@ -1963,5 +1980,15 @@ private async markSessionSeen(userId: bigint, postIds: bigint[],existingIds?: Se
   const merged = [...existing, ...postIds.map(id => id.toString())].slice(-1000);
   await this.redisService.set(key, merged, 3600); // 1-hour session window
 }
-  
+ async findPostsByUsername(username1: string) {
+
+  return this.prisma.post.findMany({
+    where: {
+      user: {
+         username: username1,
+      },
+    },
+  });
+}
+
 }

@@ -1,6 +1,7 @@
 import {
   Body, Controller, Delete, Get,
-  Param, Patch, Post, Query, Req
+  Param, Patch, Post, Query, Req,
+  UseGuards
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -14,6 +15,9 @@ import {
 import { PostService } from './post.service';
 import { CreatePostDto } from './dto/create-post.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
+import { Public } from 'src/auth/decorators/public.decorator';
+import {  PostVisibility } from '@prisma/client';
+import { JwtAuthGuard } from 'src/auth/guards/jwt-auth/jwt-auth.guard';
 
 @ApiTags('Posts')           // ← اسم المجموعة في Swagger UI
 @ApiBearerAuth()            // ← كل الـ endpoints تحتاج JWT Token
@@ -72,15 +76,15 @@ export class PostController {
   // ─────────────────────────────────────────
   // GET /post — جلب كل البوستات
   // ─────────────────────────────────────────
-  @Get()
-  @ApiOperation({
-    summary: 'جلب كل البوستات',
-    description: 'يرجع قائمة بجميع البوستات الموجودة',
-  })
-  @ApiResponse({ status: 200, description: 'تم جلب البوستات بنجاح' })
-  findAll() {
-    return this.postService.findAll();
-  }
+  // @Get()
+  // @ApiOperation({
+  //   summary: 'جلب كل البوستات',
+  //   description: 'يرجع قائمة بجميع البوستات الموجودة',
+  // })
+  // @ApiResponse({ status: 200, description: 'تم جلب البوستات بنجاح' })
+  // findAll() {
+  //   return this.postService.findAll();
+  // }
 
   // ─────────────────────────────────────────
   // GET /post/:id — جلب بوست واحد
@@ -102,7 +106,37 @@ export class PostController {
     return this.postService.findOne(id);
   }
 
-  // ─────────────────────────────────────────
+  // here if i want find the post by the user name like for see posts for certain user
+  @Public()
+  @Get('user/:username1')
+  findPostsByUsername(@Param('username1') username1: string) {
+    return this.postService.findPostsByUsername(username1);
+  }
+  //here when i am share the post and this have original post and qutoe content like look how syria is good now 
+
+  @Post('share/:postId')
+  sharePost(@Param('postId') postId: string, @Req() req, @Body() body: { quoteContent?: string }) {
+    return this.postService.sharePost(req.user.id, postId, body.quoteContent);
+  }
+
+  ///here when i want make schdedule for my post
+  @Post('schedule')
+  schedulePost(@Req() req, @Body() body: {scheduledTime: string }) {
+    return this.postService.schedulePost(req.user.id, body);
+  }
+
+ //here we updsert the post visablity when i want make the post public or private or friends only
+  @Patch('update-privacy/:postId')
+ 
+  updatePostPrivacy(@Req() req, @Param('postId') postId: string, @Body() body: { visibility: PostVisibility}) {
+    return this.postService.updatePostPrivacy(req.user.id, postId, body.visibility);
+  }
+  //here saved the post
+  @Post('save/:postId')
+  savePost(@Req() req, @Param('postId') postId: string) {
+    return this.postService.savePost(BigInt(postId), req.user.id);
+  }
+    // ─────────────────────────────────────────
   // PATCH /post/:id — تعديل بوست
   // ─────────────────────────────────────────
   @Patch(':id')
@@ -123,6 +157,7 @@ export class PostController {
   update(@Param('id') id: string, @Body() updatePostDto: UpdatePostDto,@Req() req) {
     return this.postService.update(id, updatePostDto, req.user.id);
   }
+  
 
   // ─────────────────────────────────────────
   // DELETE /post/:id — حذف بوست
