@@ -25,12 +25,14 @@ export class ReactionService {
     if (reactableType === 'POST') {
       const post = await this.prisma.post.findUnique({
         where: { id: reactableId },
-        select: { id: true, groupId: true },
+        select: { id: true, groupId: true ,userId: true, hashtags: { select: { hashtag: { select: { nameLower: true } } } } },
       });
 
       return {
         postId: post?.id ?? reactableId,
         groupId: post?.groupId ?? null,
+        userId: post?.userId ?? null,
+        hashtags: post?.hashtags ?? [],
       };
     }
 
@@ -39,7 +41,7 @@ export class ReactionService {
       select: {
         postId: true,
         post: {
-          select: { groupId: true },
+          select: { groupId: true, userId: true, hashtags: { select: { hashtag: { select: { nameLower: true } } } } },
         },
       },
     });
@@ -47,9 +49,13 @@ export class ReactionService {
     return {
       postId: comment?.postId ?? reactableId,
       groupId: comment?.post?.groupId ?? null,
+      userId: comment?.post?.userId ?? null,
+      hashtags: comment?.post?.hashtags ?? [],
     };
   }
 
+
+  
   findAll() {
     return this.prisma.reaction.findMany();
   }
@@ -96,8 +102,11 @@ export class ReactionService {
 
   async toggleReaction(userId: string | number | bigint, createDto: CreateReactionDto) {
     const effectiveReactionType = createDto.reactionType ?? 'LIKE';
+    const engagementReactions = new Set(['LIKE', 'LOVE', 'CARE', 'WOW', 'ANGRY', 'SAD', 'HH']);
+    const shouldTrackEngagement = engagementReactions.has(effectiveReactionType);
     const userBigInt = this.toBigInt(userId);
     const reactableId = this.toBigInt(createDto.reactableId);
+    
     const existingReaction = await this.prisma.reaction.findUnique({
       where: {
         userId_reactableId_reactableType: {
@@ -122,7 +131,7 @@ export class ReactionService {
         data: { reactionType: effectiveReactionType },
       });
 
-      if (effectiveReactionType === 'LIKE') {
+      if (shouldTrackEngagement) {
         await this.engagementScoreService.trackReactionCreated({
           userId,
           postId: engagementContext.postId,
@@ -142,12 +151,21 @@ export class ReactionService {
         reactionType: effectiveReactionType,
       },
     });
-
-    if (effectiveReactionType === 'LIKE') {
+// await this.engagementScoreService.trackReactionCreated({
+//   userId: reactingUserId,          // who reacted
+//   targetUserId: post.userId,       // ← post author (add this)
+//   postId: post.id,
+//   groupId: post.groupId,
+//   hashtags: post.hashtags.map(h => h.hashtag.nameLower),
+//   reactionType: reactionType,
+// });
+    if (shouldTrackEngagement) {
       await this.engagementScoreService.trackReactionCreated({
-        userId,
+       userId: userBigInt, 
+         targetUserId: engagementContext.userId,
         postId: engagementContext.postId,
         groupId: engagementContext.groupId,
+          hashtags: engagementContext.hashtags?.map(h => h.hashtag.nameLower),
         reactionType: effectiveReactionType,
       });
     }

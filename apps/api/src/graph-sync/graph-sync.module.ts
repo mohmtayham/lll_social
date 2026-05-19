@@ -8,6 +8,7 @@ import { GraphSyncProcessor } from './graph-sync.processor';
     Neo4jModule,
     BullModule.registerQueue({
       name: 'graph-sync',
+      prefix: 'bull:{graph-sync}',
     }),
   ],
   providers: [GraphSyncProcessor],

@@ -17,16 +17,22 @@ export class ScoreService {
       'decay-scores-task',
       {},
       {
-        attempts: 3,
-        backoff: { type: 'exponential', delay: 5000 },
-        removeOnComplete: true,
-        removeOnFail: false,
+    
+   jobId: `manual-decay-${Date.now()}`, // ✅ أو تحقق من وجود weekly-decay أولاً
+    // jobId: 'weekly-decay',     // ← fixed ID prevents duplicate jobs
+    attempts: 3,
+    backoff: { type: 'exponential', delay: 5000 },
+    removeOnComplete: true,
+    removeOnFail: false,
+  
+
+     
       },
     );
   }
 
   async enqueueDecayJob() {
-    this.logger.log('Manual trigger: Adding score decay job to Redis queue...');
+    this.logger.log('Manual trigger: Adding score decay job to Rb vedis queue...');
     return this.scoreQueue.add(
       'decay-scores-task',
       {},

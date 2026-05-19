@@ -1,5 +1,6 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
+// import { inspect } from 'util';
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
@@ -28,4 +29,12 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       PrismaService.isConnected = false;
     }
   }
+
+  // [inspect.custom](): string {
+  //   return 'PrismaService';
+  // }
+
+  // toJSON(): string {
+  //   return 'PrismaService';
+  // }
 }

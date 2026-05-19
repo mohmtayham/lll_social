@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { EngagementScoreService } from 'src/score/engagement-score.service';
 import { CreateCommentDto } from './dto/create-comment.dto';
@@ -6,6 +6,8 @@ import { UpdateCommentDto } from './dto/update-comment.dto';
 
 @Injectable()
 export class CommentService {
+  private readonly logger = new Logger(CommentService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly engagementScoreService: EngagementScoreService,
@@ -21,14 +23,35 @@ export class CommentService {
     const matches = content.match(/#[\w\u0600-\u06FF]+/g);
     if (!matches) return [];
 
-    return [...new Set(matches.map((tag) => tag.slice(1).toLowerCase()))];
+    return [
+      ...new Set(
+        matches
+          .map((tag) => tag.slice(1).toLowerCase().trim())
+          .filter((tag) => tag.length > 1 && tag.length < 50),
+      ),
+    ];
   }
 
   async create(createCommentDto: CreateCommentDto) {
+    const postId = this.toBigInt(createCommentDto.postId);
+    const userId = this.toBigInt(createCommentDto.userId);
+    // In your CommentService:
+
+
+    const post = await this.prisma.post.findUnique({
+      where: { id: postId },
+      select: { id: true, groupId: true ,userId: true},
+    });
+
+    if (!post) {
+      throw new NotFoundException('Post not found');
+    }
+
+  
     const comment = await this.prisma.comment.create({
       data: {
-        postId: this.toBigInt(createCommentDto.postId),
-        userId: this.toBigInt(createCommentDto.userId),
+        postId,
+        userId,
         parentId: createCommentDto.parentId
           ? this.toBigInt(createCommentDto.parentId)
           : null,
@@ -36,20 +59,24 @@ export class CommentService {
         isEdited: createCommentDto.isEdited ?? false,
       },
     });
+  //       await this.engagementScoreService.trackCommentCreated({
+  //   userId: comment.userId,
+  //   targetUserId: post.userId,       // ← post author (add this)
+  //   postId: post.id,
+  //   groupId: post.groupId,  //   hashtags: this.extractHashtags(comment.content),
+  // });
 
-    const post = await this.prisma.post.findUnique({
-      where: { id: this.toBigInt(createCommentDto.postId) },
-      select: {
-        groupId: true,
-      },
-    });
-
-    await this.engagementScoreService.trackCommentCreated({
-      userId: comment.userId,
-      postId: comment.postId,
-      groupId: post?.groupId ?? null,
-      hashtags: this.extractHashtags(comment.content),
-    });
+    try {
+      await this.engagementScoreService.trackCommentCreated({
+        userId: comment.userId,
+        targetUserId: post.userId,
+        postId: comment.postId,
+        groupId: post.groupId,
+        hashtags: this.extractHashtags(comment.content),
+      });
+    } catch (error) {
+      this.logger.warn(`Failed to queue comment engagement: ${String(error)}`);
+    }
 
     return comment;
   }

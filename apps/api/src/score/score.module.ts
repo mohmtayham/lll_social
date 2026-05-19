@@ -11,6 +11,7 @@ import { PrismaModule } from 'src/prisma/prisma.module';
   imports: [
     BullModule.registerQueue({
       name: 'score-decay', // اسم الطابور في Redis
+      prefix: 'bull:{score-decay}',
       defaultJobOptions: {
         attempts: 3,
         backoff: { type: 'exponential', delay: 5000 },
@@ -20,6 +21,7 @@ import { PrismaModule } from 'src/prisma/prisma.module';
     }),
     BullModule.registerQueue({
       name: 'engagement-score',
+      prefix: 'bull:{engagement-score}',
       defaultJobOptions: {
         attempts: 3,
         backoff: { type: 'exponential', delay: 1000 },

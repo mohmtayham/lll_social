@@ -2,12 +2,15 @@ import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { DlqListener } from './dlq-listener';
 import { DlqProcessor } from './dlq.processor';
+import { PrismaModule } from 'src/prisma/prisma.module';
 
 @Module({
   imports: [
+    PrismaModule,
     BullModule.registerQueue(
       {
         name: 'graph-sync',
+        prefix: 'bull:{graph-sync}',
         defaultJobOptions: {
           attempts: 3,
           backoff: { type: 'exponential', delay: 1000 },
@@ -17,6 +20,7 @@ import { DlqProcessor } from './dlq.processor';
       },
       {
         name: 'post-scheduling',
+        prefix: 'bull:{post-scheduling}',
         defaultJobOptions: {
           attempts: 3,
           backoff: { type: 'exponential', delay: 2000 },
@@ -26,6 +30,7 @@ import { DlqProcessor } from './dlq.processor';
       },
       {
         name: 'score-decay',
+        prefix: 'bull:{score-decay}',
         defaultJobOptions: {
           attempts: 3,
           backoff: { type: 'exponential', delay: 5000 },
@@ -35,6 +40,7 @@ import { DlqProcessor } from './dlq.processor';
       },
       {
         name: 'engagement-score',
+        prefix: 'bull:{engagement-score}',
         defaultJobOptions: {
           attempts: 3,
           backoff: { type: 'exponential', delay: 1000 },
@@ -44,6 +50,7 @@ import { DlqProcessor } from './dlq.processor';
       },
       {
         name: 'dlq',
+        prefix: 'bull:{dlq}',
         defaultJobOptions: {
           removeOnComplete: true,
           removeOnFail: false,

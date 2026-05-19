@@ -1,2 +1,15 @@
 //pnpm dev --b swc
 //"C:\redis\redis-cli.exe" --cluster create 127.0.0.1:7000 127.0.0.1:7001 127.0.0.1:7002 --cluster-replicas 0
+//wsl -d Ubuntu -u hp
+//cd ~
+//nano start-redis.sh
+//#!/bin/sh
+// sudo pkill -9 redis-server
+// /usr/bin/redis-server /mnt/c/Users/HP/Desktop/lll_social/apps/api/redis-cluster/7001/redis.conf --bind 0.0.0.0
+// /usr/bin/redis-server /mnt/c/Users/HP/Desktop/lll_social/apps/api/redis-cluster/7002/redis.conf --bind 0.0.0.0
+// /usr/bin/redis-server /mnt/c/Users/HP/Desktop/lll_social/apps/api/redis-cluster/7003/redis.conf --bind 0.0.0.0
+// echo "Redis Nodes Started!"
+// ps aux | grep redis-server
+
+
+

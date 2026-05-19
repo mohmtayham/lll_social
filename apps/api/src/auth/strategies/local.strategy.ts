@@ -29,7 +29,8 @@ export class LocalStrategy extends PassportStrategy(Strategy) {
       this.logger.log('✅ Validation successful');
       return user;
     } catch (error) {
-      this.logger.error(`❌ Validation failed: ${error.message}`);
+     const errorMessage = error instanceof Error ? error.message : String(error);
+      this.logger.error(`❌ Validation failed: ${errorMessage}`);
       throw new UnauthorizedException();
     }
   }

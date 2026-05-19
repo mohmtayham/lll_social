@@ -8,6 +8,7 @@ import { BullModule } from '@nestjs/bullmq';
   imports: [
     BullModule.registerQueue({
       name: 'graph-sync',
+      prefix: 'bull:{graph-sync}',
       defaultJobOptions: {
         attempts: 3,
         backoff: { type: 'exponential', delay: 1000 },

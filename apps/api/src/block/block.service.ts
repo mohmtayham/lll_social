@@ -2,15 +2,25 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateBlockDto } from './dto/create-block.dto';
 import { UpdateBlockDto } from './dto/update-block.dto';
+import { RedisService } from 'src/redis/redis.service';
 
 @Injectable()
 export class BlockService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly redisService: RedisService,
+  ) {}
 
   private toBigInt(value: string | number | bigint): bigint {
     if (typeof value === 'bigint') return value;
     if (typeof value === 'number') return BigInt(value);
     return BigInt(value);
+  }
+
+  private async invalidateVisibilityCache(...userIds: Array<string | number | bigint>) {
+    await Promise.all(
+      userIds.map((id) => this.redisService.del(`visibility:${this.toBigInt(id).toString()}`)),
+    );
   }
 
   async create(createBlockDto: CreateBlockDto) {
@@ -56,18 +66,26 @@ export class BlockService {
     });
 
     if (exsitingBlock) {
-      return this.prisma.block.delete({
+      const deleted = await this.prisma.block.delete({
         where: {
           id: exsitingBlock.id,
         },
       });
+
+      await this.invalidateVisibilityCache(createBlockDto.blockerId, createBlockDto.blockedId);
+
+      return deleted;
     }
 
-    return this.prisma.block.create({
+    const created = await this.prisma.block.create({
       data: {
         blockerId: this.toBigInt(createBlockDto.blockerId),
         blockedId: this.toBigInt(createBlockDto.blockedId),
       },
     });
+
+    await this.invalidateVisibilityCache(createBlockDto.blockerId, createBlockDto.blockedId);
+
+    return created;
   }
 }

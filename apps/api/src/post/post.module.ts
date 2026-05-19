@@ -12,6 +12,7 @@ import { ScoreModule } from 'src/score/score.module';
     ScoreModule,
     BullModule.registerQueue({
       name: 'post-scheduling', // اسم الطابور
+      prefix: 'bull:{post-scheduling}',
       defaultJobOptions: {
         attempts: 3,
         backoff: { type: 'exponential', delay: 2000 },
@@ -21,6 +22,7 @@ import { ScoreModule } from 'src/score/score.module';
     }),
     BullModule.registerQueue({
       name: 'graph-sync',
+      prefix: 'bull:{graph-sync}',
       defaultJobOptions: {
         attempts: 3,
         backoff: { type: 'exponential', delay: 1000 },
@@ -31,5 +33,6 @@ import { ScoreModule } from 'src/score/score.module';
   ],
   controllers: [PostController],
   providers: [PostService, PostSchedulingProcessor, PrismaService],
+  exports: [PostService],
 })
 export class PostModule {}

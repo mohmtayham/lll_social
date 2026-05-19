@@ -1,11 +1,11 @@
 node_modules
-.pnpm-store
-.turbo
+# .pnpm-store
+# .turbo
 
-.env
-.env.local
+# .env
+# .env.local
 
-dist
-build
-.next
-out
+# dist
+# build
+# .next
+# out

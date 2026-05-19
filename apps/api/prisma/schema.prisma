@@ -195,8 +195,7 @@ model User {
   userInterests            UserInterest[]
   relationshipScoresGiven  UserRelationshipScore[]   @relation("UserRelationshipScoreGiven")
   relationshipScoresTarget UserRelationshipScore[]   @relation("UserRelationshipScoreTarget")
-  feedCache                UserFeedCache[]
-
+  hiddenBy HiddenPost[]
   @@map("users")
 }
 
@@ -272,9 +271,7 @@ model Post {
   interactions   UserInteraction[]
   trendingScores TrendingScore[]
   categoryMap    PostCategoryMap[]
-  
-  feedCache      UserFeedCache[]
-
+  hiddenBy HiddenPost[]
   @@index([userId])
   @@index([userId, createdAt])
   @@index([createdAt])
@@ -569,6 +566,8 @@ model Hashtag {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(0)
 
   posts PostHashtag[]
+   relatedFrom HashtagRelation[] @relation("HashtagRelationSource")
+  relatedTo   HashtagRelation[] @relation("HashtagRelationTarget")
 
   @@map("hashtags")
 }
@@ -582,6 +581,21 @@ model PostHashtag {
 
   @@id([postId, hashtagId])
   @@map("post_hashtags")
+}
+
+model HashtagRelation {
+  sourceId  BigInt   @map("source_id") @db.UnsignedBigInt
+  targetId  BigInt   @map("target_id") @db.UnsignedBigInt
+  weight    Float    @default(0)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
+
+  source Hashtag @relation("HashtagRelationSource", fields: [sourceId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  target Hashtag @relation("HashtagRelationTarget", fields: [targetId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@id([sourceId, targetId])
+  @@index([sourceId, weight])
+  @@index([targetId, weight])
+  @@map("hashtag_relations")
 }
 
 model UserInteraction {
@@ -658,20 +672,6 @@ model PostCategoryMap {
   @@map("post_category_map")
 }
 
-model UserFeedCache {
-  userId    BigInt   @map("user_id") @db.UnsignedBigInt
-  postId    BigInt   @map("post_id") @db.UnsignedBigInt
-  score     Float
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(0)
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  post Post @relation(fields: [postId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-
-  @@id([userId, postId])
-  @@index([userId, score])
-  @@index([userId, createdAt])
-  @@map("user_feed_cache")
-}
 model Group {
   id            BigInt       @id @default(autoincrement()) @db.UnsignedBigInt
   name          String       @db.VarChar(255)
@@ -718,7 +718,7 @@ model UserGroupAffinity {
   userId    BigInt   @map("user_id") @db.UnsignedBigInt
   groupId   BigInt   @map("group_id") @db.UnsignedBigInt
   score     Float    @default(0)
-  // مهم جداً لحساب الـ Decay (خمود الاهتمام)
+
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
 
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -727,4 +727,32 @@ model UserGroupAffinity {
   @@id([userId, groupId])
   @@index([userId, score]) // لتسريع جلب أكثر مجموعات يحبها المستخدم
   @@map("user_group_affinities")
+}
+
+model DeadLetterQueue {
+  id            BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  sourceQueue   String   @db.VarChar(100)
+  jobName       String   @db.VarChar(100)
+  jobData       Json
+  failureReason String   @db.Text
+  failureCount  Int      @default(0)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  lastRetryAt   DateTime? @map("last_retry_at") @db.Timestamp(0)
+  resolvedAt    DateTime? @map("resolved_at") @db.Timestamp(0)
+
+  @@index([sourceQueue, resolvedAt])
+  @@index([createdAt])
+  @@map("dlq_jobs")
+}
+
+model HiddenPost {
+  userId BigInt @map("user_id") @db.UnsignedBigInt
+  postId BigInt @map("post_id") @db.UnsignedBigInt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@id([userId, postId]) // يفضل جعل الحقلين معاً هما المفتاح الأساسي للجدول المركب
+  @@index([postId])
+  @@map("hidden_posts")
 }

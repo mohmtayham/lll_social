@@ -1006,21 +1006,6 @@ async function seed() {
     },
   });
 
-  await prisma.userFeedCache.upsert({
-    where: {
-      userId_postId: {
-        userId: bob.id,
-        postId: postAlice.id,
-      },
-    },
-    update: { score: 0.99 },
-    create: {
-      userId: bob.id,
-      postId: postAlice.id,
-      score: 0.99,
-    },
-  });
-
   console.log('Seeding completed successfully.');
 }
 

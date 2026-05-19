@@ -10,18 +10,21 @@ type EngagementJobData = {
   postId?: string | null;
   hashtags?: string[];
   reactionType?: string;
+  increment?: number;
 };
 
 @Processor('engagement-score')
 export class EngagementScoreProcessor extends WorkerHost {
   private readonly logger = new Logger(EngagementScoreProcessor.name);
+  private readonly maxGroupAffinity = 1000;
+  private readonly maxInterestScore = 500;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly redisService: RedisService,
   ) {
     super();
-  }
+  }              
 
   async process(job: Job<EngagementJobData, any, string>): Promise<any> {
     switch (job.name) {
@@ -39,7 +42,14 @@ export class EngagementScoreProcessor extends WorkerHost {
         break;
       case 'reaction-created':
         await this.handleReactionCreated(job.data);
+
         break;
+        case 'reaction-removed':
+  await this.handleReactionRemoved(job.data);
+  break;
+
+
+
       default:
         this.logger.warn(`Unknown engagement job: ${job.name}`);
     }
@@ -51,54 +61,58 @@ export class EngagementScoreProcessor extends WorkerHost {
   }
 
   private async invalidateUserFeedCache(userId: bigint) {
-    await Promise.all([
-      this.prisma.userFeedCache.deleteMany({ where: { userId } }),
-      this.redisService.delByPattern(`feed:user:${userId.toString()}:*`),
-    ]);
+    await this.redisService.delByPattern(`feed:{user:${userId.toString()}}:*`);
   }
 
+ 
   private async addGroupAffinity(userId: bigint, groupId: bigint, increment: number) {
-    await this.prisma.userGroupAffinity.upsert({
-      where: {
-        userId_groupId: {
-          userId,
-          groupId,
-        },
-      },
-      update: {
-        score: { increment },
-      },
-      create: {
-        userId,
-        groupId,
-        score: increment,
-      },
-    });
+    const boundedIncrement = Math.max(0, increment);
+    if (!boundedIncrement) return;
+
+    await this.prisma.$executeRaw`
+      INSERT INTO user_group_affinities (user_id, group_id, score, updated_at)
+      VALUES (${userId}, ${groupId}, ${boundedIncrement}, NOW())
+      ON DUPLICATE KEY UPDATE
+        score = LEAST(score + ${boundedIncrement}, ${this.maxGroupAffinity}),
+        updated_at = NOW()
+    `;
   }
 
   private async addInterests(userId: bigint, hashtags: string[], increment: number) {
-    const normalizedHashtags = [...new Set(hashtags.map((tag) => tag.trim().toLowerCase()).filter(Boolean))];
+    const normalizedHashtags = [
+      ...new Set(
+        hashtags
+          .map((tag) => tag.trim().toLowerCase())
+          .filter((tag) => tag.length > 1 && tag.length < 50),
+      ),
+    ];
     if (!normalizedHashtags.length) return;
+
+    const boundedIncrement = Math.max(0, increment);
+    if (!boundedIncrement) return;
 
     await Promise.all(
       normalizedHashtags.map((interest) =>
-        this.prisma.userInterest.upsert({
-          where: { userId_interest: { userId, interest } },
-          update: {
-            score: { increment },
-          },
-          create: {
-            userId,
-            interest,
-            score: increment,
-          },
-        }),
+        this.prisma.$executeRaw`
+          INSERT INTO user_interests (user_id, interest, score, updated_at)
+          VALUES (${userId}, ${interest}, ${boundedIncrement}, NOW())
+          ON DUPLICATE KEY UPDATE
+            score = LEAST(score + ${boundedIncrement}, ${this.maxInterestScore}),
+            updated_at = NOW()
+        `,
       ),
     );
   }
-
+private async handleReactionRemoved(data: EngagementJobData) {
+  const userId = this.toBigInt(data.userId);
+  if (!userId || !data.increment) return;
+  // increment هنا سالب، نستخدمه مباشرة
+  if (data.hashtags?.length) {
+    await this.addInterests(userId, data.hashtags, Math.abs(Math.ceil(data.increment / 2)) * -1);
+  }
+}
   private async handleGroupJoin(data: EngagementJobData) {
-    const userId = this.toBigInt(data.userId);
+     const userId = this.toBigInt(data.userId);
     const groupId = this.toBigInt(data.groupId);
     if (!userId || !groupId) return;
 
@@ -148,9 +162,24 @@ export class EngagementScoreProcessor extends WorkerHost {
     const groupId = this.toBigInt(data.groupId);
     if (!userId) return;
 
+    const reactionWeights: Record<string, number> = {
+     LIKE: 5,
+      LOVE: 9,
+      CARE: 7,
+      WOW: 6,
+      ANGRY: 4,
+      SAD: 6,
+      HH: 12,
+    };
+    const increment = data.increment ?? reactionWeights[data.reactionType ?? 'LIKE'] ?? 5;
+
     if (groupId) {
-      await this.addGroupAffinity(userId, groupId, 5);
+      await this.addGroupAffinity(userId, groupId, increment);
     }
+      // Add interest boost from post hashtags
+  if (data.hashtags?.length) {
+    await this.addInterests(userId, data.hashtags, Math.ceil(increment / 2));
+  }
 
     await this.invalidateUserFeedCache(userId);
   }

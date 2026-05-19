@@ -2,6 +2,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue, QueueEvents as BullQueueEvents } from 'bullmq';
+import { createBullMqConnection } from '../redis/redis.config';
 
 @Injectable()
 export class DlqListener implements OnModuleInit, OnModuleDestroy {
@@ -28,14 +29,10 @@ export class DlqListener implements OnModuleInit, OnModuleDestroy {
   }
 
   private attachDlqLogic(queue: Queue) {
-    const connection =
-      (queue.opts.connection as any) ||
-      {
-        host: process.env.LOCAL_REDIS_HOST || '127.0.0.1',
-        port: parseInt(String(process.env.LOCAL_REDIS_PORT || 6379), 10),
-      };
+    const connection = queue.opts.connection || createBullMqConnection();
+    const prefix = queue.opts.prefix;
 
-    const events = new BullQueueEvents(queue.name, { connection });
+    const events = new BullQueueEvents(queue.name, { connection, prefix });
     this.queueEvents.push(events);
 
     events.on('failed', async ({ jobId, failedReason }) => {

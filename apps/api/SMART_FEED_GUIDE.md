@@ -1,4 +1,4 @@
-# Smart Feed Guide (Redis + UserFeedCache + BullMQ + Neo4j)
+# Smart Feed Guide (Redis + BullMQ + Neo4j)
 
 ## 1) What this architecture does
 
@@ -13,7 +13,6 @@ This API now builds feed results from multiple sources, then mixes them with ran
 Then it caches the mixed result in:
 
 - Redis ZSET (fast ranked post IDs, short TTL)
-- user_feed_cache table (warm cache fallback)
 
 ## 2) Data flow
 
@@ -35,12 +34,10 @@ Events are sent to BullMQ queue graph-sync and processed asynchronously:
 When calling GET /post/feed:
 
 1. Check Redis key first
-2. If miss, check user_feed_cache table
-3. If miss, compute candidates from graph + SQL sources
-4. Mix and randomize scores
-5. Load rich post data from MySQL
-6. Save top candidates to user_feed_cache
-7. Save ranked post IDs in Redis ZSET
+2. If miss, compute candidates from graph + SQL sources
+3. Mix and randomize scores
+4. Load rich post data from MySQL
+5. Save ranked post IDs in Redis ZSET
 
 ## 3) Required environment variables
 

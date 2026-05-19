@@ -1,4 +1,6 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import { GroupMemberRole, GroupMemberStatus, GroupPrivacy, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { EngagementScoreService } from '../score/engagement-score.service';
@@ -10,6 +12,7 @@ export class GroupService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly engagementScoreService: EngagementScoreService,
+    @InjectQueue('graph-sync') private readonly graphQueue: Queue,
   ) {}
 
   private toBigInt(value: string | number | bigint): bigint {
@@ -121,6 +124,17 @@ export class GroupService {
 
     await this.engagementScoreService.trackGroupJoin({ userId: user, groupId: group });
 
+    await this.graphQueue.add(
+      'group-join',
+      { userId: user.toString(), groupId: group.toString() },
+      {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 1000 },
+        removeOnComplete: true,
+        removeOnFail: false,
+      },
+    );
+
     return member;
   }
 
@@ -133,6 +147,17 @@ export class GroupService {
     });
 
     await this.engagementScoreService.trackGroupLeave({ userId: user, groupId: group });
+
+    await this.graphQueue.add(
+      'group-leave',
+      { userId: user.toString(), groupId: group.toString() },
+      {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 1000 },
+        removeOnComplete: true,
+        removeOnFail: false,
+      },
+    );
 
     return { message: 'Left group successfully' };
   }
