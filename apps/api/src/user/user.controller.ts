@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { UserService } from './user.service';
 import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateProfileDto } from './dto/update-user.dto';
 
 @Controller('user')
 export class UserController {
@@ -36,5 +37,14 @@ export class UserController {
   @Get('email/:email')
   async findByEmail(@Param('email') email: string) {
     return this.userService.findByEmail(email);
+  }
+
+  @Patch(':id/profile')
+  // @UseGuards(JwtAuthGuard) // Recommended: protect this route
+  async updateProfile(
+    @Param('id') id: string,
+    @Body() updateProfileDto: UpdateProfileDto,
+  ) {
+    return await this.userService.updateProfile(id, updateProfileDto);
   }
 }

@@ -1,8 +1,12 @@
 import { UpdateUserPrivacyDto } from './../user-privacy/dto/update-user-privacy.dto';
-import { Injectable } from '@nestjs/common';
+// 1. Added the missing NestJS exceptions here
+import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
 import { CreateUserDto } from './dto/create-user.dto';
+// 2. Added the missing DTO import (adjust the path if yours is different)
+import { UpdateProfileDto } from './dto/update-user.dto';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { Role } from '@prisma/client';
+// 3. Added Prisma to handle the error typing
+import { Role, Prisma } from '@prisma/client';
 
 import { hash } from 'argon2';
 
@@ -15,8 +19,6 @@ export class UserService {
     if (typeof userId === 'number') return BigInt(userId);
     return BigInt(userId);
   }
-
-  
 
   async create(createUserDto: CreateUserDto) {
     const { password, ...user } = createUserDto;
@@ -55,5 +57,46 @@ export class UserService {
         hashedRefreshToken: hashedRT,
       },
     });
+  }
+
+  // --- NEW UPDATE PROFILE METHOD ---
+  async updateProfile(userId: string | number | bigint, updateData: UpdateProfileDto) {
+    const id = this.toBigInt(userId);
+
+    // If the user is updating their username, ensure it doesn't already exist
+    if (updateData.username) {
+      const existingUser = await this.prisma.user.findUnique({
+        where: { username: updateData.username },
+      });
+
+      if (existingUser && existingUser.id !== id) {
+        throw new ConflictException('Username is already taken');
+      }
+    }
+
+    try {
+      const updatedUser = await this.prisma.user.update({
+        where: { id },
+        data: {
+          ...updateData,
+          // If media IDs are passed as numbers/strings, ensure they are cast to BigInt for Prisma
+          ...(updateData.avatarMediaId && { avatarMediaId: this.toBigInt(updateData.avatarMediaId) }),
+          ...(updateData.coverMediaId && { coverMediaId: this.toBigInt(updateData.coverMediaId) }),
+        },
+      });
+
+      // 4. Fixed the 'delete' error by destructuring the object to remove sensitive data
+      const { password, hashedRefreshToken, ...safeUser } = updatedUser;
+
+      return safeUser;
+    } catch (error) {
+      // 5. Fixed the 'unknown' error type by checking if it's a Prisma Request Error
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2025') {
+          throw new NotFoundException('User not found');
+        }
+      }
+      throw error;
+    }
   }
 }
