@@ -60,43 +60,102 @@ export class UserService {
   }
 
   // --- NEW UPDATE PROFILE METHOD ---
-  async updateProfile(userId: string | number | bigint, updateData: UpdateProfileDto) {
-    const id = this.toBigInt(userId);
+  // async updateProfile(userId: string | number | bigint, updateData: UpdateProfileDto) {
+  //   const id = this.toBigInt(userId);
 
-    // If the user is updating their username, ensure it doesn't already exist
-    if (updateData.username) {
-      const existingUser = await this.prisma.user.findUnique({
-        where: { username: updateData.username },
-      });
+  //   // If the user is updating their username, ensure it doesn't already exist
+  //   if (updateData.username) {
+  //     const existingUser = await this.prisma.user.findUnique({
+  //       where: { username: updateData.username },
+  //     });
 
-      if (existingUser && existingUser.id !== id) {
-        throw new ConflictException('Username is already taken');
-      }
+  //     if (existingUser && existingUser.id !== id) {
+  //       throw new ConflictException('Username is already taken');
+  //     }
+  //   }
+
+  //   try {
+  //     const updatedUser = await this.prisma.user.update({
+  //       where: { id },
+  //       data: {
+  //         ...updateData,
+  //         // If media IDs are passed as numbers/strings, ensure they are cast to BigInt for Prisma
+  //         ...(updateData.avatarMediaId && { avatarMediaId: this.toBigInt(updateData.avatarMediaId) }),
+  //         ...(updateData.coverMediaId && { coverMediaId: this.toBigInt(updateData.coverMediaId) }),
+  //       },
+  //     });
+
+  //     // 4. Fixed the 'delete' error by destructuring the object to remove sensitive data
+  //     const { password, hashedRefreshToken, ...safeUser } = updatedUser;
+
+  //     return safeUser;
+  //   } catch (error) {
+  //     // 5. Fixed the 'unknown' error type by checking if it's a Prisma Request Error
+  //     if (error instanceof Prisma.PrismaClientKnownRequestError) {
+  //       if (error.code === 'P2025') {
+  //         throw new NotFoundException('User not found');
+  //       }
+  //     }
+  //     throw error;
+  //   }
+  // }
+
+  async getProfile(userId: bigint | number | string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: BigInt(userId) },
+      select: {
+        id: true,
+        name: true,
+        username: true,
+        email: true,
+        bio: true,
+        phone: true,
+        dateOfBirth: true,
+        location: true,
+        city: true,
+        country: true,
+        gender: true,
+        role: true,
+        avatarMedia: { select: { id: true, path: true } },
+        coverMedia: { select: { id: true, path: true } },
+        createdAt: true,
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
     }
 
-    try {
-      const updatedUser = await this.prisma.user.update({
-        where: { id },
-        data: {
-          ...updateData,
-          // If media IDs are passed as numbers/strings, ensure they are cast to BigInt for Prisma
-          ...(updateData.avatarMediaId && { avatarMediaId: this.toBigInt(updateData.avatarMediaId) }),
-          ...(updateData.coverMediaId && { coverMediaId: this.toBigInt(updateData.coverMediaId) }),
-        },
-      });
+    return user;
+  }
 
-      // 4. Fixed the 'delete' error by destructuring the object to remove sensitive data
-      const { password, hashedRefreshToken, ...safeUser } = updatedUser;
+  async updateProfile(userId: bigint | number | string, dto: UpdateProfileDto) {
+    const { avatarMediaId, coverMediaId, ...rest } = dto;
 
-      return safeUser;
-    } catch (error) {
-      // 5. Fixed the 'unknown' error type by checking if it's a Prisma Request Error
-      if (error instanceof Prisma.PrismaClientKnownRequestError) {
-        if (error.code === 'P2025') {
-          throw new NotFoundException('User not found');
-        }
-      }
-      throw error;
-    }
+    return this.prisma.user.update({
+      where: { id: BigInt(userId) },
+      data: {
+        ...rest,
+        ...(avatarMediaId !== undefined && { avatarMediaId: BigInt(avatarMediaId) }),
+        ...(coverMediaId !== undefined && { coverMediaId: BigInt(coverMediaId) }),
+      },
+      select: {
+        id: true,
+        name: true,
+        username: true,
+        email: true,
+        bio: true,
+        phone: true,
+        dateOfBirth: true,
+        location: true,
+        city: true,
+        country: true,
+        gender: true,
+        role: true,
+        avatarMedia: { select: { id: true, path: true } },
+        coverMedia: { select: { id: true, path: true } },
+        updatedAt: true,
+      },
+    });
   }
 }

@@ -22,11 +22,17 @@ export class UserController {
   }
 
   // Get current logged-in user's profile
-  @Get('me')
-  async getProfile(@Req() req: any) {
-    // TODO: Replace with req.user.id once your AuthGuard is set up
-    const userId = req.user?.id || '1'; 
-    return this.userService.findOne(userId);
+  // @Get('me')
+  // async getProfile(@Req() req: any) {
+  //   // TODO: Replace with req.user.id once your AuthGuard is set up
+  //   const userId = req.user?.id || '1'; 
+  //   return this.userService.findOne(userId);
+  // }
+
+   // GET /user/profile — يرجع بروفايل المستخدم المسجّل حاليًا
+  @Get('profile')
+  getProfile(@Req() req) {
+    return this.userService.getProfile(req.user.id);
   }
 
   @Get(':id')
@@ -39,12 +45,12 @@ export class UserController {
     return this.userService.findByEmail(email);
   }
 
-  @Patch(':id/profile')
-  // @UseGuards(JwtAuthGuard) // Recommended: protect this route
-  async updateProfile(
-    @Param('id') id: string,
-    @Body() updateProfileDto: UpdateProfileDto,
-  ) {
-    return await this.userService.updateProfile(id, updateProfileDto);
+
+ 
+ 
+  // PATCH /user/profile — يعدّل بروفايل المستخدم المسجّل حاليًا
+  @Patch('profile')
+  updateProfile(@Req() req, @Body() updateProfileDto: UpdateProfileDto) {
+    return this.userService.updateProfile(req.user.id, updateProfileDto);
   }
 }
