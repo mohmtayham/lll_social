@@ -2,12 +2,14 @@ import { BadRequestException, ConflictException, Injectable, Logger, NotFoundExc
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { PostVisibility, Prisma } from '@prisma/client';
+import type { Request } from 'express';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { RedisService } from 'src/redis/redis.service';
 import { EngagementScoreService } from 'src/score/engagement-score.service';
 import { Neo4jService } from '../neo4j/neo4j.service';
 import { CreatePostDto } from './dto/create-post.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
+import { serializeMedia } from 'src/media/media-storage';
 
 type FeedCandidate = {
   postId: bigint;
@@ -65,6 +67,48 @@ export class PostService {
     if (typeof value === 'bigint') return value;
     if (typeof value === 'number') return BigInt(value);
     return BigInt(value);
+  }
+
+  private postIncludeWithMedia() {
+    return {
+      user: true,
+      media: {
+        include: {
+          media: true,
+        },
+      },
+      hashtags: {
+        include: { hashtag: true },
+      },
+    };
+  }
+
+  private serializePost<T>(post: T, req?: Request): T {
+    if (!post) return post;
+
+    const serialized = JSON.parse(
+      JSON.stringify(post, (_key, value) =>
+        typeof value === 'bigint' ? value.toString() : value,
+      ),
+    ) as Record<string, any>;
+
+    if (Array.isArray(serialized.media)) {
+      serialized.media = serialized.media.map((relation) => {
+        const media = serializeMedia(relation.media ?? relation, req);
+
+        return {
+          ...relation,
+          ...media,
+          media,
+        };
+      });
+    }
+
+    return serialized as T;
+  }
+
+  private serializePosts<T>(posts: T[], req?: Request): T[] {
+    return posts.map((post) => this.serializePost(post, req));
   }
 
   private makeFeedRankKey(userId: string | number | bigint): string {
@@ -655,7 +699,7 @@ export class PostService {
     await this.redisService.replaceSortedSet(rankKey, entries, this.feedRedisTtlSeconds);
   }
 
-  private async loadPostsByIds(postIds: bigint[], visibilityContext: FeedVisibilityContext) {
+  private async loadPostsByIds(postIds: bigint[], visibilityContext: FeedVisibilityContext, req?: Request) {
     if (!postIds.length) return [];
     const visibilityWhere = this.buildVisibilityWhere(visibilityContext);
 
@@ -665,19 +709,14 @@ export class PostService {
         status: { in: ['PUBLISHED', 'DIRECT'] },
         ...visibilityWhere,
       },
-      include: {
-        user: true,
-        media: true,
-        hashtags: {
-          include: { hashtag: true },
-        },
-      },
+      include: this.postIncludeWithMedia(),
     });
 
     const byId = new Map(posts.map((post) => [post.id.toString(), post]));
     return postIds
       .map((postId) => byId.get(postId.toString()))
-      .filter((post): post is (typeof posts)[number] => Boolean(post));
+      .filter((post): post is (typeof posts)[number] => Boolean(post))
+      .map((post) => this.serializePost(post, req));
   }
 
   private async readGraphFriendPosts(userId: bigint, limit: number): Promise<ScoredPost[]> {
@@ -1093,7 +1132,7 @@ export class PostService {
     return scheduledPost;
   }
 
-  async create(userId: string | number | bigint, createPostDto: CreatePostDto) {
+  async create(userId: string | number | bigint, createPostDto: CreatePostDto, req?: Request) {
     const hashtags = this.extractHashtags(createPostDto.content || '');
     const { mediaIds, ...rest } = createPostDto;
 
@@ -1164,9 +1203,9 @@ export class PostService {
       hashtags,
     });
 
-    return post;
+    return this.findOne(post.id.toString(), req);
   }
-async getFeedForUser(userId: string | number | bigint, page = 1, pageSize = 20) {
+async getFeedForUser(userId: string | number | bigint, page = 1, pageSize = 20, req?: Request) {
   const normalizedPage = this.normalizePage(page);
   const normalizedPageSize = this.normalizePageSize(pageSize);
   const userIdBigInt = this.toBigInt(userId);
@@ -1179,7 +1218,7 @@ async getFeedForUser(userId: string | number | bigint, page = 1, pageSize = 20) 
     normalizedPageSize,
   );
   if (redisRankedIds.length) {
-    const redisFeed = await this.loadPostsByIds(redisRankedIds, visibilityContext);
+    const redisFeed = await this.loadPostsByIds(redisRankedIds, visibilityContext, req);
     if (redisFeed.length >= normalizedPageSize){
        const seenIds = await this.getSessionSeenIds(userIdBigInt);
          const filtered = redisFeed.filter(
@@ -1279,7 +1318,7 @@ async getFeedForUser(userId: string | number | bigint, page = 1, pageSize = 20) 
   const start = (normalizedPage - 1) * normalizedPageSize;
   const selectedIds = ranked.slice(start, start + normalizedPageSize).map((item) => item.postId);
 
-  let feed = await this.loadPostsByIds(selectedIds, visibilityContext);
+  let feed = await this.loadPostsByIds(selectedIds, visibilityContext, req);
 
   // ── Fill if short ────────────────────────────────────────────────
   if (feed.length < normalizedPageSize) {
@@ -1293,7 +1332,7 @@ async getFeedForUser(userId: string | number | bigint, page = 1, pageSize = 20) 
     }
 
     if (fillIds.length) {
-      const fillPosts = await this.loadPostsByIds(fillIds, visibilityContext);
+      const fillPosts = await this.loadPostsByIds(fillIds, visibilityContext, req);
       feed = [...feed, ...fillPosts];
       for (const post of fillPosts) existingIds.add(post.id.toString());
     }
@@ -1308,9 +1347,9 @@ async getFeedForUser(userId: string | number | bigint, page = 1, pageSize = 20) 
         },
         orderBy: { createdAt: 'desc' },
         take: normalizedPageSize - feed.length,
-        include: { user: true, media: true, hashtags: { include: { hashtag: true } } },
+        include: this.postIncludeWithMedia(),
       });
-      feed = [...feed, ...fallbackPosts];
+      feed = [...feed, ...this.serializePosts(fallbackPosts, req)];
     }
   }
 
@@ -1481,18 +1520,25 @@ async getFeedForUser(userId: string | number | bigint, page = 1, pageSize = 20) 
 //     return feed;
 //   }
 
-  findAll() {
-    return this.prisma.post.findMany();
-  }
-
-  findOne(id: string) {
-    return this.prisma.post.findUnique({
-      where: { id: this.toBigInt(id) },
+  async findAll(req?: Request) {
+    const posts = await this.prisma.post.findMany({
+      include: this.postIncludeWithMedia(),
     });
+
+    return this.serializePosts(posts, req);
+  }
+
+  async findOne(id: string, req?: Request) {
+    const post = await this.prisma.post.findUnique({
+      where: { id: this.toBigInt(id) },
+      include: this.postIncludeWithMedia(),
+    });
+
+    return this.serializePost(post, req);
   }
 
 
-  async update(id: string, updatePostDto: UpdatePostDto, userId: bigint) {
+  async update(id: string, updatePostDto: UpdatePostDto, userId: bigint, req?: Request) {
     userId = this.toBigInt(userId);
       const user= await this.prisma.user.findUnique({
       where: { id: userId },
@@ -1563,7 +1609,7 @@ async getFeedForUser(userId: string | number | bigint, page = 1, pageSize = 20) 
       hashtags: this.extractHashtags(post.content || ''),
     });
 
-    return post;
+    return this.findOne(post.id.toString(), req);
   }
 
   async remove(id: string, userId: bigint) {
@@ -1980,15 +2026,18 @@ private async markSessionSeen(userId: bigint, postIds: bigint[],existingIds?: Se
   const merged = [...existing, ...postIds.map(id => id.toString())].slice(-1000);
   await this.redisService.set(key, merged, 3600); // 1-hour session window
 }
- async findPostsByUsername(username1: string) {
+ async findPostsByUsername(username1: string, req?: Request) {
 
-  return this.prisma.post.findMany({
+  const posts = await this.prisma.post.findMany({
     where: {
       user: {
          username: username1,
       },
     },
+    include: this.postIncludeWithMedia(),
   });
+
+  return this.serializePosts(posts, req);
 }
 
 }

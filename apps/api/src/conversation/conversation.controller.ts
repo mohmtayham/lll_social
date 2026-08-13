@@ -12,19 +12,19 @@ export class ConversationController {
   // The service decides whether the conversation is DIRECT/GROUP and applies rules.
   @Post()
   create(@Req() req, @Body() createConversationDto: CreateConversationDto) {
-    return this.conversationService.createForUser(req.user.id, createConversationDto);
+    return this.conversationService.createForUser(req.user.id, createConversationDto, req);
   }
 
   // Return all active conversations for the authenticated user with unread metadata.
   @Get('mine')
   findMine(@Req() req) {
-    return this.conversationService.listMine(req.user.id);
+    return this.conversationService.listMine(req.user.id, req);
   }
 
   // Return full details for one conversation only if user is still a participant.
   @Get(':id')
   findOne(@Req() req, @Param('id') id: string) {
-    return this.conversationService.getByIdForUser(req.user.id, id);
+    return this.conversationService.getByIdForUser(req.user.id, id, req);
   }
 
   // Update conversation profile fields (name/description/avatar) with role checks.

@@ -32,7 +32,7 @@ export class UserController {
    // GET /user/profile — يرجع بروفايل المستخدم المسجّل حاليًا
   @Get('profile')
   getProfile(@Req() req) {
-    return this.userService.getProfile(req.user.id);
+    return this.userService.getProfile(req.user.id, req);
   }
 
   @Get(':id')
@@ -51,6 +51,6 @@ export class UserController {
   // PATCH /user/profile — يعدّل بروفايل المستخدم المسجّل حاليًا
   @Patch('profile')
   updateProfile(@Req() req, @Body() updateProfileDto: UpdateProfileDto) {
-    return this.userService.updateProfile(req.user.id, updateProfileDto);
+    return this.userService.updateProfile(req.user.id, updateProfileDto, req);
   }
 }

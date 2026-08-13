@@ -1,9 +1,11 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { MessageType } from '@prisma/client';
+import type { Request } from 'express';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateMessageDto } from './dto/create-message.dto';
 import { UpdateMessageDto } from './dto/update-message.dto';
 import { ConversationService } from 'src/conversation/conversation.service';
+import { serializeMedia } from 'src/media/media-storage';
 
 @Injectable()
 export class MessageService {
@@ -28,6 +30,42 @@ export class MessageService {
     ) as T;
   }
 
+  private messageInclude() {
+    return {
+      sender: {
+        select: {
+          id: true,
+          name: true,
+          username: true,
+          avatarMediaId: true,
+        },
+      },
+      attachments: {
+        include: {
+          media: true,
+        },
+      },
+    };
+  }
+
+  private serializeMessage<T>(message: T, req?: Request): T {
+    const serialized = this.serialize(message) as Record<string, any>;
+
+    if (Array.isArray(serialized.attachments)) {
+      serialized.attachments = serialized.attachments.map((attachment) => {
+        const media = serializeMedia(attachment.media, req);
+
+        return {
+          ...attachment,
+          ...media,
+          media,
+        };
+      });
+    }
+
+    return serialized as T;
+  }
+
   // Shared permission guard used by read/write operations.
   private async ensureParticipant(conversationId: bigint, userId: bigint) {
     const isParticipant = await this.conversationService.isUserParticipant(userId, conversationId);
@@ -42,15 +80,19 @@ export class MessageService {
   // 2) validate payload/reply target
   // 3) persist message
   // 4) update conversation last activity pointers
-  async sendMessage(userIdRaw: string | number | bigint, createMessageDto: CreateMessageDto) {
-    const attachment = createMessageDto.messageAttachment;
+  async sendMessage(userIdRaw: string | number | bigint, createMessageDto: CreateMessageDto, req?: Request) {
+    const attachment =
+      createMessageDto.messageAttachment ??
+      createMessageDto.mediaIds ??
+      createMessageDto.attachments;
+    const hasAttachments = Array.isArray(attachment) && attachment.length > 0;
     const senderId = this.toBigInt(userIdRaw);
     const conversationId = this.toBigInt(createMessageDto.conversationId);
 
     await this.ensureParticipant(conversationId, senderId);
 
     // At least one meaningful field should be present.
-    if (!createMessageDto.content && !createMessageDto.replyToId && !createMessageDto.clientMessageId) {
+    if (!createMessageDto.content && !createMessageDto.replyToId && !createMessageDto.clientMessageId && !hasAttachments) {
       throw new ForbiddenException('Message payload is empty');
     }
 
@@ -81,24 +123,16 @@ export class MessageService {
           : undefined,
         clientMessageId: createMessageDto.clientMessageId,
       },
-      include: {
-        sender: {
-          select: {
-            id: true,
-            name: true,
-            username: true,
-            avatarMediaId: true,
-          },
-        },
-      },
+      include: this.messageInclude(),
     });
 
-if (attachment?.length) {
+    if (attachment?.length) {
       await this.prisma.messageAttachment.createMany({
         data: attachment.map((mediaId) => ({
           messageId: message.id,
           mediaId: this.toBigInt(mediaId),
         })),
+        skipDuplicates: true,
       });
     }
 
@@ -125,7 +159,12 @@ if (attachment?.length) {
       },
     });
 
-    return this.serialize(message);
+    const messageWithAttachments = await this.prisma.message.findUnique({
+      where: { id: message.id },
+      include: this.messageInclude(),
+    });
+
+    return this.serializeMessage(messageWithAttachments ?? message, req);
   }
 
   // Conversation history endpoint with optional cursor-style pagination.
@@ -134,6 +173,7 @@ if (attachment?.length) {
     conversationIdRaw: string,
     limitRaw?: string,
     beforeIdRaw?: string,
+    req?: Request,
   ) {
     const userId = this.toBigInt(userIdRaw);
     const conversationId = this.toBigInt(conversationIdRaw);
@@ -157,39 +197,21 @@ if (attachment?.length) {
         id: 'desc',
       },
       take: limit,
-      include: {
-        sender: {
-          select: {
-            id: true,
-            name: true,
-            username: true,
-            avatarMediaId: true,
-          },
-        },
-      },
+      include: this.messageInclude(),
     });
 
     // Query desc for efficient take, then reverse so UI gets oldest->newest order.
-    return this.serialize([...messages].reverse());
+    return [...messages].reverse().map((message) => this.serializeMessage(message, req));
   }
 
   // Fetch one message if requester still belongs to the conversation.
-  async findOneForUser(userIdRaw: string | number | bigint, idRaw: string) {
+  async findOneForUser(userIdRaw: string | number | bigint, idRaw: string, req?: Request) {
     const userId = this.toBigInt(userIdRaw);
     const id = this.toBigInt(idRaw);
 
     const message = await this.prisma.message.findUnique({
       where: { id },
-      include: {
-        sender: {
-          select: {
-            id: true,
-            name: true,
-            username: true,
-            avatarMediaId: true,
-          },
-        },
-      },
+      include: this.messageInclude(),
     });
 
     if (!message) {
@@ -198,7 +220,7 @@ if (attachment?.length) {
 
     await this.ensureParticipant(message.conversationId, userId);
 
-    return this.serialize(message);
+    return this.serializeMessage(message, req);
   }
 
   // Edit message with ownership check and edit history snapshot.

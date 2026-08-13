@@ -1,9 +1,11 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConversationParticipantRole, ConversationType } from '@prisma/client';
+import type { Request } from 'express';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateConversationDto } from './dto/create-conversation.dto';
 import { UpdateConversationDto } from './dto/update-conversation.dto';
 import { AddConversationParticipantDto } from './dto/add-conversation-participant.dto';
+import { serializeMedia } from 'src/media/media-storage';
 
 @Injectable()
 export class ConversationService {
@@ -25,6 +27,36 @@ export class ConversationService {
         typeof value === 'bigint' ? value.toString() : value,
       ),
     ) as T;
+  }
+
+  private serializeConversation<T>(conversation: T, req?: Request): T {
+    const serialized = this.serialize(conversation) as Record<string, any>;
+    const normalizeMessage = (message: Record<string, any> | null) => {
+      if (!message || !Array.isArray(message.attachments)) return message;
+
+      return {
+        ...message,
+        attachments: message.attachments.map((attachment) => {
+          const media = serializeMedia(attachment.media, req);
+
+          return {
+            ...attachment,
+            ...media,
+            media,
+          };
+        }),
+      };
+    };
+
+    if (Array.isArray(serialized.messages)) {
+      serialized.messages = serialized.messages.map(normalizeMessage);
+    }
+
+    if (serialized.lastMessage) {
+      serialized.lastMessage = normalizeMessage(serialized.lastMessage);
+    }
+
+    return serialized as T;
   }
 
   // Shared include object for conversation list screens.
@@ -63,6 +95,11 @@ export class ConversationService {
               name: true,
               username: true,
               avatarMediaId: true,
+            },
+          },
+          attachments: {
+            include: {
+              media: true,
             },
           },
         },
@@ -130,7 +167,7 @@ export class ConversationService {
 
   // Create a new conversation or return existing DIRECT conversation if same 2 users already have one.
   // This prevents duplicate direct chat threads between the same pair.
-  async createForUser(userIdRaw: string | number | bigint, createConversationDto: CreateConversationDto) {
+  async createForUser(userIdRaw: string | number | bigint, createConversationDto: CreateConversationDto, req?: Request) {
     const creatorId = this.toBigInt(userIdRaw);
     // Use set to remove duplicate IDs and always include creator.
     const participantIdSet = new Set(
@@ -190,7 +227,7 @@ export class ConversationService {
       });
 
       if (existing) {
-        return this.getByIdForUser(userIdRaw, existing.id.toString());
+        return this.getByIdForUser(userIdRaw, existing.id.toString(), req);
       }
     }
 
@@ -217,11 +254,11 @@ export class ConversationService {
       include: this.conversationListInclude(),
     });
 
-    return this.serialize(createdConversation);
+    return this.serializeConversation(createdConversation, req);
   }
 
   // Return inbox-style list for current user with computed unreadCount.
-  async listMine(userIdRaw: string | number | bigint) {
+  async listMine(userIdRaw: string | number | bigint, req?: Request) {
     const userId = this.toBigInt(userIdRaw);
 
     const memberships = await this.prisma.conversationParticipant.findMany({
@@ -280,11 +317,11 @@ export class ConversationService {
       return new Date(bTime).getTime() - new Date(aTime).getTime();
     });
 
-    return this.serialize(data);
+    return data.map((conversation) => this.serializeConversation(conversation, req));
   }
 
   // Return one conversation with participants + recent message window.
-  async getByIdForUser(userIdRaw: string | number | bigint, id: string) {
+  async getByIdForUser(userIdRaw: string | number | bigint, id: string, req?: Request) {
     const userId = this.toBigInt(userIdRaw);
     const conversationId = this.toBigInt(id);
 
@@ -331,6 +368,11 @@ export class ConversationService {
                 avatarMediaId: true,
               },
             },
+            attachments: {
+              include: {
+                media: true,
+              },
+            },
           },
         },
       },
@@ -346,7 +388,7 @@ export class ConversationService {
       messages: [...conversation.messages].reverse(),
     };
 
-    return this.serialize(normalized);
+    return this.serializeConversation(normalized, req);
   }
 
   // Update conversation metadata.

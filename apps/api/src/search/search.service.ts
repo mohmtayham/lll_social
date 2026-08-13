@@ -1,11 +1,13 @@
 import { Injectable } from '@nestjs/common';
+import type { Request } from 'express';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { serializeMedia } from 'src/media/media-storage';
 
 @Injectable()
 export class SearchService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async globalSearch(userId: string | number, query: string, limit = 10) {
+  async globalSearch(userId: string | number, query: string, limit = 10, req?: Request) {
     const cleanQuery = query?.trim() ?? '';
     if (!cleanQuery) {
       return { users: [], posts: [], groups: [] };
@@ -25,7 +27,7 @@ export class SearchService {
           id: true,
           name: true,
           username: true,
-          avatarMedia: { select: { path: true } },
+          avatarMedia: true,
         },
         take: limit,
       }),
@@ -44,7 +46,7 @@ export class SearchService {
           id: true,
           name: true,
           description: true,
-          avatarMedia: { select: { path: true } },
+          avatarMedia: true,
           privacy: true,
         },
         take: limit,
@@ -67,7 +69,7 @@ export class SearchService {
               id: true,
               name: true,
               username: true,
-              avatarMedia: { select: { path: true } },
+              avatarMedia: true,
             },
           },
           media: {
@@ -84,21 +86,22 @@ export class SearchService {
       users: users.map((u) => ({
         ...u,
         id: u.id.toString(),
+        avatarMedia: serializeMedia(u.avatarMedia, req),
       })),
       groups: groups.map((g) => ({
         ...g,
         id: g.id.toString(),
+        avatarMedia: serializeMedia(g.avatarMedia, req),
       })),
       posts: posts.map((p) => ({
         ...p,
         id: p.id.toString(),
-        user: { ...p.user, id: p.user.id.toString() },
-        media: p.media.map(m =>({
-            ...m.media,
-            id: m.media.id.toString(),
-            size: m.media.size.toString(),
-            uploadedBy: m.media.uploadedBy.toString()
-        }))
+        user: {
+          ...p.user,
+          id: p.user.id.toString(),
+          avatarMedia: serializeMedia(p.user.avatarMedia, req),
+        },
+        media: p.media.map((m) => serializeMedia(m.media, req)),
       })),
     };
   }

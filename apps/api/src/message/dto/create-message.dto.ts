@@ -22,4 +22,12 @@ export class CreateMessageDto {
    @IsOptional()
     @IsArray()
     messageAttachment?: bigint[];
+
+  @IsOptional()
+  @IsArray()
+  mediaIds?: bigint[];
+
+  @IsOptional()
+  @IsArray()
+  attachments?: bigint[];
 }

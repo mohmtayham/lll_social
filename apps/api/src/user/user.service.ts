@@ -1,12 +1,14 @@
 import { UpdateUserPrivacyDto } from './../user-privacy/dto/update-user-privacy.dto';
 // 1. Added the missing NestJS exceptions here
 import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
+import type { Request } from 'express';
 import { CreateUserDto } from './dto/create-user.dto';
 // 2. Added the missing DTO import (adjust the path if yours is different)
 import { UpdateProfileDto } from './dto/update-user.dto';
 import { PrismaService } from 'src/prisma/prisma.service';
 // 3. Added Prisma to handle the error typing
 import { Role, Prisma } from '@prisma/client';
+import { serializeMedia } from 'src/media/media-storage';
 
 import { hash } from 'argon2';
 
@@ -100,7 +102,7 @@ export class UserService {
   //   }
   // }
 
-  async getProfile(userId: bigint | number | string) {
+  async getProfile(userId: bigint | number | string, req?: Request) {
     const user = await this.prisma.user.findUnique({
       where: { id: BigInt(userId) },
       select: {
@@ -116,8 +118,8 @@ export class UserService {
         country: true,
         gender: true,
         role: true,
-        avatarMedia: { select: { id: true, path: true } },
-        coverMedia: { select: { id: true, path: true } },
+        avatarMedia: true,
+        coverMedia: true,
         createdAt: true,
       },
     });
@@ -126,13 +128,17 @@ export class UserService {
       throw new NotFoundException('User not found');
     }
 
-    return user;
+    return {
+      ...user,
+      avatarMedia: serializeMedia(user.avatarMedia, req),
+      coverMedia: serializeMedia(user.coverMedia, req),
+    };
   }
 
-  async updateProfile(userId: bigint | number | string, dto: UpdateProfileDto) {
+  async updateProfile(userId: bigint | number | string, dto: UpdateProfileDto, req?: Request) {
     const { avatarMediaId, coverMediaId, ...rest } = dto;
 
-    return this.prisma.user.update({
+    const user = await this.prisma.user.update({
       where: { id: BigInt(userId) },
       data: {
         ...rest,
@@ -152,10 +158,16 @@ export class UserService {
         country: true,
         gender: true,
         role: true,
-        avatarMedia: { select: { id: true, path: true } },
-        coverMedia: { select: { id: true, path: true } },
+        avatarMedia: true,
+        coverMedia: true,
         updatedAt: true,
       },
     });
+
+    return {
+      ...user,
+      avatarMedia: serializeMedia(user.avatarMedia, req),
+      coverMedia: serializeMedia(user.coverMedia, req),
+    };
   }
 }

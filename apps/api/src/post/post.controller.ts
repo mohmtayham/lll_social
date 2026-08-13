@@ -38,7 +38,7 @@ export class PostController {
   @ApiResponse({ status: 401, description: 'غير مصرح — يحتاج Token' })
   @ApiResponse({ status: 400, description: 'بيانات غير صحيحة' })
   create(@Req() req, @Body() createPostDto: CreatePostDto) {
-    return this.postService.create(req.user.id, createPostDto);
+    return this.postService.create(req.user.id, createPostDto, req);
   }
 
   // ─────────────────────────────────────────
@@ -70,7 +70,7 @@ export class PostController {
     @Query('page') page = '1',
     @Query('pageSize') pageSize = '20',
   ) {
-    return this.postService.getFeedForUser(req.user.id, Number(page), Number(pageSize));
+    return this.postService.getFeedForUser(req.user.id, Number(page), Number(pageSize), req);
   }
 
   // ─────────────────────────────────────────
@@ -102,15 +102,15 @@ export class PostController {
   })
   @ApiResponse({ status: 200, description: 'تم إيجاد البوست' })
   @ApiResponse({ status: 404, description: 'البوست غير موجود' })
-  findOne(@Param('id') id: string) {
-    return this.postService.findOne(id);
+  findOne(@Req() req, @Param('id') id: string) {
+    return this.postService.findOne(id, req);
   }
 
   // here if i want find the post by the user name like for see posts for certain user
   @Public()
   @Get('user/:username1')
-  findPostsByUsername(@Param('username1') username1: string) {
-    return this.postService.findPostsByUsername(username1);
+  findPostsByUsername(@Req() req, @Param('username1') username1: string) {
+    return this.postService.findPostsByUsername(username1, req);
   }
   //here when i am share the post and this have original post and qutoe content like look how syria is good now 
 
@@ -164,7 +164,7 @@ export class PostController {
   @ApiResponse({ status: 404, description: 'البوست غير موجود' })
   @ApiResponse({ status: 401, description: 'غير مصرح' })
   update(@Param('id') id: string, @Body() updatePostDto: UpdatePostDto,@Req() req) {
-    return this.postService.update(id, updatePostDto, req.user.id);
+    return this.postService.update(id, updatePostDto, req.user.id, req);
   }
   
 

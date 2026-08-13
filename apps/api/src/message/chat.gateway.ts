@@ -16,6 +16,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import type { AuthJwtPayload } from 'src/auth/types/auth-jwtPayload';
 import { CreateMessageDto } from './dto/create-message.dto';
 import { UpdateMessageDto } from './dto/update-message.dto';
+import { serializeMedia } from 'src/media/media-storage';
 
 // نوع مخصص للسوكِت بعد المصادقة: نخزن userId داخل data لاستخدامه في كل Event لاحقا.
 type AuthedSocket = Socket & { data: { userId?: string } };
@@ -372,6 +373,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
                 avatarMediaId: true,
               },
             },
+            attachments: {
+              include: {
+                media: true,
+              },
+            },
           },
         },
       },
@@ -384,7 +390,19 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const payload = this.serialize({
       ...conversation,
       lastMessage: conversation.messages[0] ?? null,
-    });
+    }) as Record<string, any>;
+
+    if (payload.lastMessage?.attachments) {
+      payload.lastMessage.attachments = payload.lastMessage.attachments.map((attachment) => {
+        const media = serializeMedia(attachment.media);
+
+        return {
+          ...attachment,
+          ...media,
+          media,
+        };
+      });
+    }
 
     // إرسال التحديث لكل مشارك داخل غرفته الخاصة.
     for (const participant of conversation.participants) {

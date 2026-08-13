@@ -10,7 +10,7 @@ export class MessageController {
   // HTTP fallback for sending messages (used if socket is unavailable).
   @Post()
   create(@Req() req, @Body() createMessageDto: CreateMessageDto) {
-    return this.messageService.sendMessage(req.user.id, createMessageDto);
+    return this.messageService.sendMessage(req.user.id, createMessageDto, req);
   }
 
   // Paginated conversation history endpoint.
@@ -21,13 +21,13 @@ export class MessageController {
     @Query('limit') limit?: string,
     @Query('beforeId') beforeId?: string,
   ) {
-    return this.messageService.listConversationMessages(req.user.id, conversationId, limit, beforeId);
+    return this.messageService.listConversationMessages(req.user.id, conversationId, limit, beforeId, req);
   }
 
   // Read one message with membership guard.
   @Get(':id')
   findOne(@Req() req, @Param('id') id: string) {
-    return this.messageService.findOneForUser(req.user.id, id);
+    return this.messageService.findOneForUser(req.user.id, id, req);
   }
 
   // Edit own message.

@@ -13,6 +13,6 @@ export class SearchController {
   ) {
     const limit = limitStr ? parseInt(limitStr, 10) : 10;
     // We assume an auth guard is applied at the module or app level to set `req.user.id`.
-    return this.searchService.globalSearch(req.user?.id, query, limit);
+    return this.searchService.globalSearch(req.user?.id, query, limit, req);
   }
 }
